@@ -189,8 +189,8 @@ activitySchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      'externalRef.provider': { $exists: true, $ne: null },
-      'externalRef.id': { $exists: true, $ne: null },
+      'externalRef.provider': { $type: 'string' },
+      'externalRef.id': { $type: 'string' },
     },
   }
 );

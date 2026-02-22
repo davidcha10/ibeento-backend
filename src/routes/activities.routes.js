@@ -8,6 +8,9 @@ const serviceController = require('../controllers/service.controller');
 // Discover activities based on multiple locations
 router.post('/discover', activityController.discover);
 router.post('/discover-preview', activityController.discoverPreview);
+router.post('/discover-preview/jobs', activityController.discoverPreviewStartJob);
+router.get('/discover-preview/jobs/:jobId', activityController.discoverPreviewJobStatus);
+router.get('/discover-preview/jobs/:jobId/result', activityController.discoverPreviewJobResult);
 router.post('/discover-preview-suggest', activityController.discoverPreviewSuggest);
 router.post('/discover-preview-one', activityController.discoverPreviewOne);
 router.get('/:id/services', serviceController.listByActivity);

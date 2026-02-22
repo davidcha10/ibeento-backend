@@ -21,6 +21,25 @@ function normalizeNameKey(value = '') {
     .replace(/\s+/g, ' ');
 }
 
+const DISCOVER_TARGET_PER_ZONE_DEFAULT = 12;
+const DISCOVER_TARGET_PER_ZONE_MIN = 1;
+const DISCOVER_TARGET_PER_ZONE_MAX = 200;
+
+function normalizeDiscoverConfig(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const rawEnabled = source.enabled;
+  const rawTarget = Number(source.targetPerZone);
+  return {
+    enabled: typeof rawEnabled === 'boolean' ? rawEnabled : true,
+    targetPerZone: Number.isFinite(rawTarget)
+      ? Math.max(
+          DISCOVER_TARGET_PER_ZONE_MIN,
+          Math.min(DISCOVER_TARGET_PER_ZONE_MAX, Math.floor(rawTarget))
+        )
+      : DISCOVER_TARGET_PER_ZONE_DEFAULT,
+  };
+}
+
 function normalizePayload(input = {}) {
   const name = String(input.name || '').trim();
   const slug = slugify(input.slug || name);
@@ -34,6 +53,7 @@ function normalizePayload(input = {}) {
     nameKey,
     source,
     externalId,
+    discover: normalizeDiscoverConfig(input.discover),
   };
 }
 
@@ -65,6 +85,7 @@ exports.create = async (req, res) => {
       order,
       group,
       tagsTypes,
+      discover,
       isActive,
     } = normalized;
 
@@ -100,6 +121,7 @@ exports.create = async (req, res) => {
       order,
       group,
       tagsTypes,
+      discover,
       isActive,
     };
 
@@ -249,11 +271,13 @@ exports.update = async (req, res) => {
     const hasSlug = Object.prototype.hasOwnProperty.call(body, 'slug');
     const hasSource = Object.prototype.hasOwnProperty.call(body, 'source');
     const hasExternalId = Object.prototype.hasOwnProperty.call(body, 'externalId');
+    const hasDiscover = Object.prototype.hasOwnProperty.call(body, 'discover');
     if (hasName) payload.name = String(body.name || '').trim();
     if (hasSlug || hasName) payload.slug = slugify(body.slug || payload.name);
     if (hasName) payload.nameKey = normalizeNameKey(payload.name);
     if (hasSource) payload.source = body.source ? String(body.source).trim().toLowerCase() : null;
     if (hasExternalId) payload.externalId = body.externalId ? String(body.externalId).trim().toUpperCase() : null;
+    if (hasDiscover) payload.discover = normalizeDiscoverConfig(body.discover);
 
     const duplicateChecks = [];
     if (payload.slug) duplicateChecks.push({ slug: payload.slug });

@@ -3,9 +3,7 @@ const jwt = require('jsonwebtoken');
 const Itinerary = require('../models/Itinerary');           // asumiendo que ya existe
 const ItineraryItem = require('../models/ItineraryItem');   // ya lo venimos usando
 const User = require('../models/User');
-const City = require('../models/City');
-const Region = require('../models/Region');
-const Country = require('../models/Country');
+const Zone = require('../models/Zone');
 const { sendTemplatedEmail } = require('../services/email.service');
 const { buildWebAppUrl } = require('../utils/web-app-url');
 const isValidObjectId = (v) => mongoose.Types.ObjectId.isValid(v);
@@ -416,11 +414,9 @@ exports.list = async (req, res, next) => {
       Itinerary.countDocuments(filter)
     ]);
 
-    // Enrich each itinerary with a visual cover prioritizing City -> Region -> Country
+    // Enrich each itinerary with a visual cover from referenced zones.
     // so the front can render a destination-themed card immediately.
-    const cityIds = new Set();
-    const regionIds = new Set();
-    const countryIds = new Set();
+    const zoneIds = new Set();
 
     const normalizeId = (value) => {
       if (!value) return null;
@@ -433,74 +429,39 @@ exports.list = async (req, res, next) => {
     };
 
     for (const it of items) {
-      const destinationCities = Array.isArray(it?.destinations?.cities) ? it.destinations.cities : [];
-      for (const row of destinationCities) {
-        const id = normalizeId(row?.cityId);
-        if (id) cityIds.add(id);
+      const destinationZones = Array.isArray(it?.destinations?.zones) ? it.destinations.zones : [];
+      for (const row of destinationZones) {
+        const id = normalizeId(row?.zoneId);
+        if (id) zoneIds.add(id);
       }
 
       const visitPlaces = Array.isArray(it?.visitPlaces) ? it.visitPlaces : [];
       for (const vp of visitPlaces) {
-        const type = String(vp?.type || '').toLowerCase();
-        const id = normalizeId(vp?._id);
-        if (type === 'city' && id) cityIds.add(id);
-        if (type === 'region' && id) regionIds.add(id);
-        if (type === 'country' && id) countryIds.add(id);
-
-        if (vp?.region?._id) regionIds.add(normalizeId(vp.region._id));
-        if (vp?.country?._id) countryIds.add(normalizeId(vp.country._id));
+        const id = normalizeId(vp?._id || vp?.zoneId);
+        if (id) zoneIds.add(id);
       }
     }
 
-    const [cities, regions, countries] = await Promise.all([
-      cityIds.size
-        ? City.find({ _id: { $in: Array.from(cityIds) } }).select('_id cover').lean()
-        : [],
-      regionIds.size
-        ? Region.find({ _id: { $in: Array.from(regionIds) } }).select('_id cover').lean()
-        : [],
-      countryIds.size
-        ? Country.find({ _id: { $in: Array.from(countryIds) } }).select('_id cover').lean()
-        : [],
-    ]);
-
-    const cityCoverById = new Map(cities.map((d) => [String(d._id), d.cover || null]));
-    const regionCoverById = new Map(regions.map((d) => [String(d._id), d.cover || null]));
-    const countryCoverById = new Map(countries.map((d) => [String(d._id), d.cover || null]));
+    const zones = zoneIds.size
+      ? await Zone.find({ _id: { $in: Array.from(zoneIds) } }).select('_id cover').lean()
+      : [];
+    const zoneCoverById = new Map(zones.map((d) => [String(d._id), d.cover || null]));
 
     const pickCover = (it) => {
-      const destinationCities = Array.isArray(it?.destinations?.cities) ? it.destinations.cities : [];
-      for (const row of destinationCities) {
-        const id = normalizeId(row?.cityId);
+      const destinationZones = Array.isArray(it?.destinations?.zones) ? it.destinations.zones : [];
+      for (const row of destinationZones) {
+        const id = normalizeId(row?.zoneId);
         if (!id) continue;
-        const cover = cityCoverById.get(id);
+        const cover = zoneCoverById.get(id);
         if (cover) return cover;
       }
 
       const visitPlaces = Array.isArray(it?.visitPlaces) ? it.visitPlaces : [];
       for (const vp of visitPlaces) {
-        const type = String(vp?.type || '').toLowerCase();
-        const id = normalizeId(vp?._id);
-        if (type === 'city' && id) {
-          const cover = cityCoverById.get(id);
-          if (cover) return cover;
-        }
-      }
-
-      for (const vp of visitPlaces) {
-        const regionId = normalizeId(vp?.region?._id || (String(vp?.type || '').toLowerCase() === 'region' ? vp?._id : null));
-        if (regionId) {
-          const cover = regionCoverById.get(regionId);
-          if (cover) return cover;
-        }
-      }
-
-      for (const vp of visitPlaces) {
-        const countryId = normalizeId(vp?.country?._id || (String(vp?.type || '').toLowerCase() === 'country' ? vp?._id : null));
-        if (countryId) {
-          const cover = countryCoverById.get(countryId);
-          if (cover) return cover;
-        }
+        const id = normalizeId(vp?._id || vp?.zoneId);
+        if (!id) continue;
+        const cover = zoneCoverById.get(id);
+        if (cover) return cover;
       }
 
       return null;

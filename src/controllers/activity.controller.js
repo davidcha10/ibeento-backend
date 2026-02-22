@@ -209,6 +209,51 @@ function minRequiredByZoneType(zoneType) {
   return Math.max(1, minRequired);
 }
 
+const DISCOVER_TARGET_PER_ZONE_DEFAULT = 12;
+const DISCOVER_TARGET_PER_ZONE_MIN = 1;
+const DISCOVER_TARGET_PER_ZONE_MAX = 200;
+
+function normalizeDiscoverTargetPerZone(rawValue) {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return DISCOVER_TARGET_PER_ZONE_DEFAULT;
+  return Math.max(
+    DISCOVER_TARGET_PER_ZONE_MIN,
+    Math.min(DISCOVER_TARGET_PER_ZONE_MAX, Math.floor(parsed))
+  );
+}
+
+function buildDiscoverEnabledCategoryFilter() {
+  return {
+    isActive: true,
+    externalId: { $exists: true, $ne: null },
+    $or: [
+      { 'discover.enabled': { $exists: false } },
+      { 'discover.enabled': true },
+    ],
+  };
+}
+
+function buildDiscoverClassConfig(activityCategories = []) {
+  const classTargetByRootId = {};
+  for (const category of Array.isArray(activityCategories) ? activityCategories : []) {
+    const externalId = String(category?.externalId || '').trim().toUpperCase();
+    if (!/^Q\d+$/.test(externalId)) continue;
+    classTargetByRootId[externalId] = normalizeDiscoverTargetPerZone(
+      category?.discover?.targetPerZone
+    );
+  }
+  const rootClassIds = Object.keys(classTargetByRootId);
+  return { rootClassIds, classTargetByRootId };
+}
+
+async function loadDiscoverClassConfig() {
+  const activityCategories = await ActivityCategory.find(
+    buildDiscoverEnabledCategoryFilter(),
+    { externalId: 1, discover: 1 }
+  ).lean();
+  return buildDiscoverClassConfig(activityCategories);
+}
+
 function buildActivityLocationFilter(location = null) {
   const id = normalizeObjectIdString(location?._id);
   if (!id) return null;
@@ -327,24 +372,476 @@ async function hasActiveLinkedService(activityId) {
   }));
 }
 
+const DISCOVER_PREVIEW_JOB_TTL_MS = 30 * 60 * 1000;
+const DISCOVER_PREVIEW_JOB_MAX_ITEMS = 120;
+const DISCOVER_PREVIEW_NO_LOCATIONS_LIMIT = 50;
+const discoverPreviewJobs = new Map();
+
+function createHttpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function stageMessageByCode(stage) {
+  if (stage === 'preparing') return 'Preparing results...';
+  if (stage === 'collecting') return 'Gathering options...';
+  if (stage === 'evaluating') return 'Refining results...';
+  if (stage === 'finalizing') return 'Finalizing list...';
+  if (stage === 'done') return 'Ready.';
+  if (stage === 'failed') return 'Could not complete this request.';
+  return 'Working...';
+}
+
+function toProgressDestination(location = {}, index = 0) {
+  return {
+    locationId: location?._id ? String(location._id) : `idx-${index}`,
+    label:
+      String(location?.label || location?.name || '').trim() ||
+      `Destination ${index + 1}`,
+    status: 'pending',
+    acceptedCount: 0,
+  };
+}
+
+function computeDiscoverProgressPercent(stage, destinationsCompleted = 0, destinationsTotal = 0) {
+  if (stage === 'done') return 100;
+  if (stage === 'failed') return 100;
+  if (stage === 'preparing') return 8;
+  if (stage === 'collecting') {
+    if (!destinationsTotal) return 42;
+    const ratio = Math.max(0, Math.min(1, destinationsCompleted / destinationsTotal));
+    return Math.round(12 + ratio * 66);
+  }
+  if (stage === 'evaluating') return 86;
+  if (stage === 'finalizing') return 96;
+  return 4;
+}
+
+function cleanupDiscoverPreviewJobs() {
+  const now = Date.now();
+  for (const [jobId, job] of discoverPreviewJobs.entries()) {
+    const updatedAtMs = new Date(job.updatedAt || job.createdAt || now).getTime();
+    if (!Number.isFinite(updatedAtMs)) {
+      discoverPreviewJobs.delete(jobId);
+      continue;
+    }
+    if (now - updatedAtMs > DISCOVER_PREVIEW_JOB_TTL_MS) {
+      discoverPreviewJobs.delete(jobId);
+    }
+  }
+
+  if (discoverPreviewJobs.size > DISCOVER_PREVIEW_JOB_MAX_ITEMS) {
+    const ordered = Array.from(discoverPreviewJobs.values()).sort(
+      (a, b) => new Date(a.updatedAt || a.createdAt).getTime() - new Date(b.updatedAt || b.createdAt).getTime()
+    );
+    const overflow = discoverPreviewJobs.size - DISCOVER_PREVIEW_JOB_MAX_ITEMS;
+    for (let i = 0; i < overflow; i += 1) {
+      const job = ordered[i];
+      if (!job?.jobId) continue;
+      discoverPreviewJobs.delete(job.jobId);
+    }
+  }
+}
+
+function normalizeProgressDestinations(destinations = []) {
+  if (!Array.isArray(destinations)) return [];
+  return destinations.map((row, index) => ({
+    locationId: row?.locationId ? String(row.locationId) : `idx-${index}`,
+    label: String(row?.label || `Destination ${index + 1}`).trim(),
+    status: String(row?.status || 'pending'),
+    acceptedCount: Number(row?.acceptedCount || 0),
+  }));
+}
+
+function updateDiscoverPreviewJobProgress(job, patch = {}) {
+  if (!job) return;
+
+  if (patch.stage) {
+    job.stage = String(patch.stage);
+    job.message = patch.message || stageMessageByCode(job.stage);
+  } else if (patch.message) {
+    job.message = String(patch.message);
+  }
+
+  if (Number.isFinite(Number(patch.destinationsTotal))) {
+    job.progress.destinationsTotal = Math.max(0, Number(patch.destinationsTotal));
+  }
+  if (Number.isFinite(Number(patch.destinationsCompleted))) {
+    job.progress.destinationsCompleted = Math.max(0, Number(patch.destinationsCompleted));
+  }
+  if (Array.isArray(patch.destinations)) {
+    job.progress.destinations = normalizeProgressDestinations(patch.destinations);
+  }
+
+  const explicitPercent = Number(patch.percent);
+  if (Number.isFinite(explicitPercent)) {
+    job.progress.percent = Math.max(0, Math.min(100, Math.round(explicitPercent)));
+  } else {
+    job.progress.percent = computeDiscoverProgressPercent(
+      job.stage,
+      job.progress.destinationsCompleted,
+      job.progress.destinationsTotal
+    );
+  }
+
+  job.updatedAt = new Date().toISOString();
+}
+
+function serializeDiscoverPreviewJob(job, options = {}) {
+  const includeResult = !!options.includeResult;
+  if (!job) return null;
+  return {
+    jobId: job.jobId,
+    status: job.status,
+    stage: job.stage,
+    message: job.message,
+    progress: {
+      percent: job.progress?.percent || 0,
+      destinationsTotal: job.progress?.destinationsTotal || 0,
+      destinationsCompleted: job.progress?.destinationsCompleted || 0,
+      destinations: normalizeProgressDestinations(job.progress?.destinations || []),
+    },
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt || null,
+    error: job.error || null,
+    result: includeResult ? job.result || null : undefined,
+  };
+}
+
+async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
+  const discoverStartMs = Date.now();
+  const { locations = [], userId, discoverControl = {} } = payload || {};
+  const rawMinSitelinks = Number(discoverControl?.minSitelinks);
+  const minSitelinks = Number.isFinite(rawMinSitelinks)
+    ? Math.max(0, Math.floor(rawMinSitelinks))
+    : 1;
+
+  if (!Array.isArray(locations)) {
+    throw createHttpError(400, 'locations[] must be an array');
+  }
+
+  for (const loc of locations) {
+    if ((locations.length && !loc) || !loc._id || !loc.type) {
+      throw createHttpError(400, 'Each location needs _id and type');
+    }
+  }
+
+  const progressDestinations = locations.map((location, index) => toProgressDestination(location, index));
+  const report = (patch = {}) => {
+    if (typeof onProgress !== 'function') return;
+    onProgress({
+      ...patch,
+      destinationsTotal: locations.length,
+      destinations: patch.destinations || progressDestinations,
+    });
+  };
+
+  report({
+    stage: 'preparing',
+    destinationsCompleted: 0,
+  });
+
+  // Fallback global: if no locations are selected, return a priority-sorted feed.
+  if (locations.length === 0) {
+    report({ stage: 'collecting', destinationsCompleted: 0 });
+    const dbFetchStartMs = Date.now();
+    const dbActivities = await Activity.find({ active: true })
+      .populate('tags', 'name slug')
+      .sort({
+        'ranking.priority': -1,
+        createdAt: -1,
+      })
+      .limit(DISCOVER_PREVIEW_NO_LOCATIONS_LIMIT)
+      .lean();
+    const dbFetchMs = Date.now() - dbFetchStartMs;
+
+    const dbCategoryIds = Array.from(
+      new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a)))
+    );
+
+    let categoriesMap = new Map();
+    if (dbCategoryIds.length) {
+      const categories = await ActivityCategory.find({
+        _id: { $in: dbCategoryIds },
+      }).lean();
+      categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
+    }
+
+    const enrichedDb = dbActivities.map((a) => {
+      const activityCategoryIds = collectActivityCategoryIds(a);
+      const activityCategories = activityCategoryIds
+        .map((id) => categoriesMap.get(String(id)) || null)
+        .filter(Boolean);
+      return {
+        ...a,
+        source: 'db',
+        activityCategoryIds,
+        activityCategories,
+        activityCategory: activityCategories[0] || null,
+      };
+    });
+
+    report({ stage: 'evaluating', destinationsCompleted: 0 });
+    const hydratedDb = await hydrateActivitiesZonePath(enrichedDb);
+    const scoreStartMs = Date.now();
+    const scored = await scoreActivitiesForUser(hydratedDb, userId);
+    const limited = scored.slice(0, DISCOVER_PREVIEW_NO_LOCATIONS_LIMIT);
+    const scoreMs = Date.now() - scoreStartMs;
+    const totalMs = Date.now() - discoverStartMs;
+
+    console.log('[discoverPreview][timing][no-locations-fallback]', {
+      dbFetchMs,
+      scoreMs,
+      returned: limited.length,
+      totalMs,
+    });
+
+    report({ stage: 'done', percent: 100, destinationsCompleted: 0 });
+    return {
+      data: limited,
+      meta: {
+        skippedWithoutGeoCount: 0,
+        skippedWithoutGeo: [],
+        persistErrorCount: 0,
+        persistErrors: [],
+      },
+    };
+  }
+
+  const allRows = [];
+  const skippedWithoutGeo = [];
+  const persistErrors = [];
+  const { rootClassIds, classTargetByRootId } = await loadDiscoverClassConfig();
+
+  report({
+    stage: 'collecting',
+    destinationsCompleted: 0,
+  });
+
+  let completedDestinations = 0;
+  for (let idx = 0; idx < locations.length; idx += 1) {
+    const l = locations[idx];
+    const locationStartMs = Date.now();
+    const minRequired = minRequiredByZoneType(l?.type);
+    const locFilter = buildActivityLocationFilter(l);
+    if (!locFilter) {
+      progressDestinations[idx] = {
+        ...progressDestinations[idx],
+        status: 'done',
+      };
+      completedDestinations += 1;
+      report({
+        stage: 'collecting',
+        destinationsCompleted: completedDestinations,
+      });
+      continue;
+    }
+
+    progressDestinations[idx] = {
+      ...progressDestinations[idx],
+      status: 'processing',
+    };
+    report({
+      stage: 'collecting',
+      destinationsCompleted: completedDestinations,
+    });
+
+    const dbFetchStartMs = Date.now();
+    const dbActivities = await Activity.find(locFilter)
+      .populate('tags', 'name slug')
+      .sort({
+        'ranking.priority': -1,
+        createdAt: -1,
+      })
+      .lean();
+    const dbFetchMs = Date.now() - dbFetchStartMs;
+
+    const dbCategoryIds = Array.from(
+      new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a)))
+    );
+
+    let categoriesMap = new Map();
+    if (dbCategoryIds.length) {
+      const categories = await ActivityCategory.find({
+        _id: { $in: dbCategoryIds },
+      }).lean();
+      categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
+    }
+
+    const enrichedDb = dbActivities.map((a) => {
+      const activityCategoryIds = collectActivityCategoryIds(a);
+      const activityCategories = activityCategoryIds
+        .map((id) => categoriesMap.get(String(id)) || null)
+        .filter(Boolean);
+      return {
+        ...a,
+        source: 'db',
+        activityCategoryIds,
+        activityCategories,
+        activityCategory: activityCategories[0] || null,
+      };
+    });
+
+    allRows.push(...enrichedDb);
+
+    if (dbActivities.length >= minRequired) {
+      progressDestinations[idx] = {
+        ...progressDestinations[idx],
+        status: 'done',
+        acceptedCount: dbActivities.length,
+      };
+      completedDestinations += 1;
+      report({
+        stage: 'collecting',
+        destinationsCompleted: completedDestinations,
+      });
+
+      console.log('[discoverPreview][timing]', {
+        locationId: String(l._id),
+        locationType: l.type,
+        minRequired,
+        fromDbOnly: true,
+        dbFetchMs,
+        totalLocationMs: Date.now() - locationStartMs,
+      });
+      continue;
+    }
+
+    const resolveCtxStartMs = Date.now();
+    const locationContext = await resolveLocationContextForPreview(l);
+    const resolveCtxMs = Date.now() - resolveCtxStartMs;
+    if (!locationContext?.name) {
+      progressDestinations[idx] = {
+        ...progressDestinations[idx],
+        status: 'done',
+        acceptedCount: dbActivities.length,
+      };
+      completedDestinations += 1;
+      report({
+        stage: 'collecting',
+        destinationsCompleted: completedDestinations,
+      });
+      continue;
+    }
+
+    const openSearchStartMs = Date.now();
+    const openCandidates = await wikidataTourismSearch(locationContext, null, {
+      rootClassIds,
+      classTargetByRootId,
+    });
+    const openCandidatesFiltered = openCandidates.filter(
+      (row) => Number(row?._preview?.sitelinksCount || 0) >= minSitelinks
+    );
+    const openSearchMs = Date.now() - openSearchStartMs;
+    const persistStartMs = Date.now();
+    const persistedOpen = await persistOpenCandidatesForLocation(openCandidatesFiltered, l);
+    const persistMs = Date.now() - persistStartMs;
+    allRows.push(...persistedOpen.saved);
+    if (persistedOpen.skippedWithoutGeo.length) {
+      skippedWithoutGeo.push(...persistedOpen.skippedWithoutGeo);
+    }
+    if (persistedOpen.failed.length) {
+      persistErrors.push(...persistedOpen.failed);
+    }
+
+    progressDestinations[idx] = {
+      ...progressDestinations[idx],
+      status: 'done',
+      acceptedCount: dbActivities.length + persistedOpen.saved.length,
+    };
+    completedDestinations += 1;
+    report({
+      stage: 'collecting',
+      destinationsCompleted: completedDestinations,
+    });
+
+    console.log('[discoverPreview][timing]', {
+      locationId: String(l._id),
+      locationType: l.type,
+      minRequired,
+      fromDbOnly: false,
+      dbFetchMs,
+      resolveCtxMs,
+      openSearchMs,
+      persistMs,
+      openCandidates: openCandidates.length,
+      openCandidatesAfterSitelinksFilter: openCandidatesFiltered.length,
+      persistedSaved: persistedOpen.saved.length,
+      persistedSkippedNoGeo: persistedOpen.skippedWithoutGeo.length,
+      persistedFailed: persistedOpen.failed.length,
+      totalLocationMs: Date.now() - locationStartMs,
+    });
+  }
+
+  const dedupMap = new Map();
+  for (const a of allRows) {
+    const key =
+      (a.source === 'db' && a._id && `db:${String(a._id)}`) ||
+      (a.source !== 'db' && a?.externalRef?.provider && a?.externalRef?.id
+        ? `ext:${a.externalRef.provider}:${a.externalRef.id}`
+        : null) ||
+      `${a.source}:${a.slug || a.name || Math.random()}`;
+    if (!dedupMap.has(key)) dedupMap.set(key, a);
+  }
+
+  report({
+    stage: 'evaluating',
+    destinationsCompleted: completedDestinations,
+  });
+
+  const deduped = Array.from(dedupMap.values());
+  const hydratedDeduped = await hydrateActivitiesZonePath(deduped);
+  const scoreStartMs = Date.now();
+  const scored = await scoreActivitiesForUser(hydratedDeduped, userId);
+  const scoreMs = Date.now() - scoreStartMs;
+  const totalMs = Date.now() - discoverStartMs;
+
+  console.log('[discoverPreview][timing][total]', {
+    locationsCount: locations.length,
+    rowsBeforeDedup: allRows.length,
+    rowsAfterDedup: deduped.length,
+    scoreMs,
+    totalMs,
+  });
+
+  report({
+    stage: 'finalizing',
+    destinationsCompleted: completedDestinations,
+  });
+
+  report({
+    stage: 'done',
+    percent: 100,
+    destinationsCompleted: completedDestinations,
+  });
+
+  return {
+    data: scored,
+    meta: {
+      skippedWithoutGeoCount: skippedWithoutGeo.length,
+      skippedWithoutGeo: skippedWithoutGeo.slice(0, 20),
+      persistErrorCount: persistErrors.length,
+      persistErrors: persistErrors.slice(0, 20),
+    },
+  };
+}
+
 exports.discover = async (req, res) => exports.discoverPreview(req, res);
 
-// ===== Discover Preview (OPEN DATA, NO Google) =====
-exports.discoverPreview = async (req, res) => {
+exports.discoverPreviewStartJob = async (req, res) => {
   try {
-    const discoverStartMs = Date.now();
-    const { locations = [], userId, discoverControl = {} } = req.body;
-    const rawMinSitelinks = Number(discoverControl?.minSitelinks);
-    const minSitelinks = Number.isFinite(rawMinSitelinks)
-      ? Math.max(0, Math.floor(rawMinSitelinks))
-      : 1;
+    cleanupDiscoverPreviewJobs();
 
-    if (!Array.isArray(locations)) {
+    const payload = req.body || {};
+    const locations = Array.isArray(payload.locations) ? payload.locations : [];
+    if (!Array.isArray(payload.locations)) {
       return res
         .status(400)
         .json({ success: false, message: 'locations[] must be an array' });
     }
-
     for (const loc of locations) {
       if ((locations.length && !loc) || !loc._id || !loc.type) {
         return res.status(400).json({
@@ -354,221 +851,133 @@ exports.discoverPreview = async (req, res) => {
       }
     }
 
-    // Fallback global: if no locations are selected, return a priority-sorted feed.
-    if (locations.length === 0) {
-      const dbFetchStartMs = Date.now();
-      const dbActivities = await Activity.find({ active: true })
-        .populate('tags', 'name slug')
-        .sort({
-          'ranking.priority': -1,
-          createdAt: -1,
-        })
-        .lean();
-      const dbFetchMs = Date.now() - dbFetchStartMs;
+    const jobId = new mongoose.Types.ObjectId().toString();
+    const nowIso = new Date().toISOString();
+    const job = {
+      jobId,
+      status: 'queued',
+      stage: 'preparing',
+      message: stageMessageByCode('preparing'),
+      progress: {
+        percent: 0,
+        destinationsTotal: locations.length,
+        destinationsCompleted: 0,
+        destinations: locations.map((loc, idx) => toProgressDestination(loc, idx)),
+      },
+      result: null,
+      error: null,
+      createdAt: nowIso,
+      startedAt: null,
+      updatedAt: nowIso,
+      finishedAt: null,
+    };
+    discoverPreviewJobs.set(jobId, job);
 
-      const dbCategoryIds = Array.from(
-        new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a)))
-      );
-
-      let categoriesMap = new Map();
-      if (dbCategoryIds.length) {
-        const categories = await ActivityCategory.find({
-          _id: { $in: dbCategoryIds },
-        }).lean();
-        categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
-      }
-
-      const enrichedDb = dbActivities.map((a) => {
-        const activityCategoryIds = collectActivityCategoryIds(a);
-        const activityCategories = activityCategoryIds
-          .map((id) => categoriesMap.get(String(id)) || null)
-          .filter(Boolean);
-        return {
-          ...a,
-          source: 'db',
-          activityCategoryIds,
-          activityCategories,
-          activityCategory: activityCategories[0] || null,
-        };
-      });
-
-      const hydratedDb = await hydrateActivitiesZonePath(enrichedDb);
-      const scoreStartMs = Date.now();
-      const scored = await scoreActivitiesForUser(hydratedDb, userId);
-      const scoreMs = Date.now() - scoreStartMs;
-      const totalMs = Date.now() - discoverStartMs;
-
-      console.log('[discoverPreview][timing][no-locations-fallback]', {
-        dbFetchMs,
-        scoreMs,
-        returned: scored.length,
-        totalMs,
-      });
-
-      return res.json({
-        success: true,
-        data: scored,
-        meta: {
-          skippedWithoutGeoCount: 0,
-          skippedWithoutGeo: [],
-          persistErrorCount: 0,
-          persistErrors: [],
-        },
-      });
-    }
-
-    const allRows = [];
-    const skippedWithoutGeo = [];
-    const persistErrors = [];
-    const activeCategoryClassIds = await ActivityCategory.find(
-      { isActive: true, externalId: { $exists: true, $ne: null } },
-      { externalId: 1 }
-    ).lean();
-    const rootClassIds = Array.from(
-      new Set(
-        activeCategoryClassIds
-          .map((c) => String(c?.externalId || '').trim().toUpperCase())
-          .filter((x) => /^Q\d+$/.test(x))
-      )
-    );
-
-    for (const l of locations) {
-      const locationStartMs = Date.now();
-      const minRequired = minRequiredByZoneType(l?.type);
-      const locFilter = buildActivityLocationFilter(l);
-      if (!locFilter) continue;
-
-      const dbFetchStartMs = Date.now();
-      const dbActivities = await Activity.find(locFilter)
-        .populate('tags', 'name slug')
-        .sort({
-          'ranking.priority': -1,
-          createdAt: -1,
-        })
-        .lean();
-      const dbFetchMs = Date.now() - dbFetchStartMs;
-
-      const dbCategoryIds = Array.from(
-        new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a)))
-      );
-
-      let categoriesMap = new Map();
-      if (dbCategoryIds.length) {
-        const categories = await ActivityCategory.find({
-          _id: { $in: dbCategoryIds },
-        }).lean();
-        categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
-      }
-
-      const enrichedDb = dbActivities.map((a) => {
-        const activityCategoryIds = collectActivityCategoryIds(a);
-        const activityCategories = activityCategoryIds
-          .map((id) => categoriesMap.get(String(id)) || null)
-          .filter(Boolean);
-        return {
-          ...a,
-          source: 'db',
-          activityCategoryIds,
-          activityCategories,
-          activityCategory: activityCategories[0] || null,
-        };
-      });
-
-      allRows.push(...enrichedDb);
-
-      if (dbActivities.length >= minRequired) {
-        console.log('[discoverPreview][timing]', {
-          locationId: String(l._id),
-          locationType: l.type,
-          minRequired,
-          fromDbOnly: true,
-          dbFetchMs,
-          totalLocationMs: Date.now() - locationStartMs,
+    setImmediate(async () => {
+      try {
+        job.status = 'running';
+        job.startedAt = new Date().toISOString();
+        job.updatedAt = job.startedAt;
+        updateDiscoverPreviewJobProgress(job, {
+          stage: 'preparing',
+          destinationsCompleted: 0,
+          destinations: job.progress.destinations,
         });
-        continue;
+
+        const response = await runDiscoverPreviewCore(payload, (patch) => {
+          updateDiscoverPreviewJobProgress(job, patch);
+        });
+
+        job.status = 'done';
+        job.result = response;
+        job.finishedAt = new Date().toISOString();
+        job.updatedAt = job.finishedAt;
+        updateDiscoverPreviewJobProgress(job, {
+          stage: 'done',
+          percent: 100,
+          destinationsCompleted: job.progress.destinationsTotal,
+        });
+      } catch (err) {
+        job.status = 'failed';
+        job.stage = 'failed';
+        job.message = stageMessageByCode('failed');
+        job.error = {
+          message: err?.message || 'Unknown error',
+        };
+        job.finishedAt = new Date().toISOString();
+        job.updatedAt = job.finishedAt;
+        updateDiscoverPreviewJobProgress(job, { percent: 100 });
+        console.error('Error in discoverPreviewStartJob worker:', err);
+      } finally {
+        cleanupDiscoverPreviewJobs();
       }
-
-      const resolveCtxStartMs = Date.now();
-      const locationContext = await resolveLocationContextForPreview(l);
-      const resolveCtxMs = Date.now() - resolveCtxStartMs;
-      if (!locationContext?.name) continue;
-
-      const openSearchStartMs = Date.now();
-      const openCandidates = await wikidataTourismSearch(locationContext, null, {
-        rootClassIds,
-      });
-      const openCandidatesFiltered = openCandidates.filter(
-        (row) => Number(row?._preview?.sitelinksCount || 0) >= minSitelinks
-      );
-      const openSearchMs = Date.now() - openSearchStartMs;
-      const persistStartMs = Date.now();
-      const persistedOpen = await persistOpenCandidatesForLocation(openCandidatesFiltered, l);
-      const persistMs = Date.now() - persistStartMs;
-      allRows.push(...persistedOpen.saved);
-      if (persistedOpen.skippedWithoutGeo.length) {
-        skippedWithoutGeo.push(...persistedOpen.skippedWithoutGeo);
-      }
-      if (persistedOpen.failed.length) {
-        persistErrors.push(...persistedOpen.failed);
-      }
-
-      console.log('[discoverPreview][timing]', {
-        locationId: String(l._id),
-        locationType: l.type,
-        minRequired,
-        fromDbOnly: false,
-        dbFetchMs,
-        resolveCtxMs,
-        openSearchMs,
-        persistMs,
-        openCandidates: openCandidates.length,
-        openCandidatesAfterSitelinksFilter: openCandidatesFiltered.length,
-        persistedSaved: persistedOpen.saved.length,
-        persistedSkippedNoGeo: persistedOpen.skippedWithoutGeo.length,
-        persistedFailed: persistedOpen.failed.length,
-        totalLocationMs: Date.now() - locationStartMs,
-      });
-    }
-
-    const dedupMap = new Map();
-    for (const a of allRows) {
-      const key =
-        (a.source === 'db' && a._id && `db:${String(a._id)}`) ||
-        (a.source !== 'db' && a?.externalRef?.provider && a?.externalRef?.id
-          ? `ext:${a.externalRef.provider}:${a.externalRef.id}`
-          : null) ||
-        `${a.source}:${a.slug || a.name || Math.random()}`;
-      if (!dedupMap.has(key)) dedupMap.set(key, a);
-    }
-
-    const deduped = Array.from(dedupMap.values());
-    const hydratedDeduped = await hydrateActivitiesZonePath(deduped);
-    const scoreStartMs = Date.now();
-    const scored = await scoreActivitiesForUser(hydratedDeduped, userId);
-    const scoreMs = Date.now() - scoreStartMs;
-    const totalMs = Date.now() - discoverStartMs;
-
-    console.log('[discoverPreview][timing][total]', {
-      locationsCount: locations.length,
-      rowsBeforeDedup: allRows.length,
-      rowsAfterDedup: deduped.length,
-      scoreMs,
-      totalMs,
     });
 
-    return res.json({
+    return res.status(202).json({
       success: true,
-      data: scored,
-      meta: {
-        skippedWithoutGeoCount: skippedWithoutGeo.length,
-        skippedWithoutGeo: skippedWithoutGeo.slice(0, 20),
-        persistErrorCount: persistErrors.length,
-        persistErrors: persistErrors.slice(0, 20),
-      },
+      job: serializeDiscoverPreviewJob(job),
     });
   } catch (err) {
-    console.error('Error in discoverPreview:', err);
+    console.error('Error in discoverPreviewStartJob:', err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.discoverPreviewJobStatus = async (req, res) => {
+  cleanupDiscoverPreviewJobs();
+  const jobId = String(req.params.jobId || '').trim();
+  const job = discoverPreviewJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, message: 'Job not found' });
+  }
+  return res.json({
+    success: true,
+    job: serializeDiscoverPreviewJob(job),
+  });
+};
+
+exports.discoverPreviewJobResult = async (req, res) => {
+  cleanupDiscoverPreviewJobs();
+  const jobId = String(req.params.jobId || '').trim();
+  const job = discoverPreviewJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, message: 'Job not found' });
+  }
+  if (job.status === 'failed') {
+    return res.status(422).json({
+      success: false,
+      message: job?.error?.message || 'Job failed',
+      job: serializeDiscoverPreviewJob(job),
+    });
+  }
+  if (job.status !== 'done' || !job.result) {
+    return res.status(409).json({
+      success: false,
+      message: 'Job still in progress',
+      job: serializeDiscoverPreviewJob(job),
+    });
+  }
+  return res.json({
+    success: true,
+    data: job.result.data || [],
+    meta: job.result.meta || {},
+    job: serializeDiscoverPreviewJob(job),
+  });
+};
+
+// ===== Discover Preview (OPEN DATA, NO Google) =====
+exports.discoverPreview = async (req, res) => {
+  try {
+    const response = await runDiscoverPreviewCore(req.body || {});
+    return res.json({
+      success: true,
+      data: response.data,
+      meta: response.meta,
+    });
+  } catch (err) {
+    const status = Number(err?.status) || 500;
+    console.error('Error in discoverPreview:', err);
+    return res.status(status).json({ success: false, message: err.message });
   }
 };
 
@@ -599,17 +1008,7 @@ exports.discoverPreviewOne = async (req, res) => {
       });
     }
 
-    const activeCategoryClassIds = await ActivityCategory.find(
-      { isActive: true, externalId: { $exists: true, $ne: null } },
-      { externalId: 1 }
-    ).lean();
-    const rootClassIds = Array.from(
-      new Set(
-        activeCategoryClassIds
-          .map((c) => String(c?.externalId || '').trim().toUpperCase())
-          .filter((x) => /^Q\d+$/.test(x))
-      )
-    );
+    const { rootClassIds } = await loadDiscoverClassConfig();
 
     const candidates = await wikidataSearchSingleActivityByText({
       term: safeQuery,
@@ -688,17 +1087,7 @@ exports.discoverPreviewSuggest = async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
-    const activeCategoryClassIds = await ActivityCategory.find(
-      { isActive: true, externalId: { $exists: true, $ne: null } },
-      { externalId: 1 }
-    ).lean();
-    const rootClassIds = Array.from(
-      new Set(
-        activeCategoryClassIds
-          .map((c) => String(c?.externalId || '').trim().toUpperCase())
-          .filter((x) => /^Q\d+$/.test(x))
-      )
-    );
+    const { rootClassIds } = await loadDiscoverClassConfig();
 
     const candidates = await wikidataSearchSingleActivityByText({
       term: safeQuery,

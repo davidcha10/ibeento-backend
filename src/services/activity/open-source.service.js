@@ -813,7 +813,7 @@ async function wikidataSparqlAroundTouristAttractions({
   radiusKm = 20,
   limit = 100,
   offset = 0,
-  rootClassId = 'Q570116',
+  rootClassIds = ['Q570116'],
 }) {
   const safeLng = Number(lng);
   const safeLat = Number(lat);
@@ -830,11 +830,17 @@ async function wikidataSparqlAroundTouristAttractions({
   ) {
     return [];
   }
-  const safeRootClassId = String(rootClassId || '').trim().toUpperCase();
-  if (!/^Q\d+$/.test(safeRootClassId)) return [];
+  const safeRootClassIds = Array.from(
+    new Set(
+      (Array.isArray(rootClassIds) ? rootClassIds : [rootClassIds])
+        .map((x) => String(x || '').trim().toUpperCase())
+        .filter((x) => /^Q\d+$/.test(x))
+    )
+  );
+  if (!safeRootClassIds.length) return [];
 
   const query = `
-SELECT ?item ?itemLabel (MIN(?distRaw) AS ?dist) (COUNT(DISTINCT ?article) AS ?sitelinks) WHERE {
+SELECT ?item ?itemLabel ?rootClass (MIN(?distRaw) AS ?dist) (COUNT(DISTINCT ?article) AS ?sitelinks) WHERE {
   SERVICE wikibase:around {
     ?item wdt:P625 ?coord .
     bd:serviceParam wikibase:center "Point(${safeLng} ${safeLat})"^^geo:wktLiteral .
@@ -842,8 +848,8 @@ SELECT ?item ?itemLabel (MIN(?distRaw) AS ?dist) (COUNT(DISTINCT ?article) AS ?s
     bd:serviceParam wikibase:distance ?distRaw .
   }
 
-  ?item wdt:P31 ?class .
-  ?class wdt:P279* wd:${safeRootClassId} .
+  VALUES ?rootClass { ${safeRootClassIds.map((qid) => `wd:${qid}`).join(' ')} }
+  ?item wdt:P31/wdt:P279* ?rootClass .
   FILTER NOT EXISTS { ?item wdt:P31 wd:Q4167410 }
 
   OPTIONAL {
@@ -853,7 +859,7 @@ SELECT ?item ?itemLabel (MIN(?distRaw) AS ?dist) (COUNT(DISTINCT ?article) AS ?s
 
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en,es,ja". }
 }
-GROUP BY ?item ?itemLabel
+GROUP BY ?item ?itemLabel ?rootClass
 ORDER BY DESC(?sitelinks) ASC(?dist)
 LIMIT ${safeLimit}
 OFFSET ${Math.max(0, Math.floor(safeOffset))}
@@ -934,9 +940,11 @@ async function wikidataSparqlAroundByRootClasses({
   radiusKm = 20,
   targetCount = 50,
   rootClassIds = [],
+  classTargetByRootId = {},
   refillBatchSize = 10,
   maxRounds = 4,
   maxConcurrency = 3,
+  classChunkSize = 10,
 }) {
   const classes = Array.from(
     new Set(
@@ -948,15 +956,52 @@ async function wikidataSparqlAroundByRootClasses({
 
   if (!classes.length) return { rows: [], fetchedRawRows: 0, rounds: 0, perClassStats: [] };
 
+  const classEntities = await wikidataGetEntitiesRaw(classes);
+  const chunkSize = Math.max(1, Math.floor(Number(classChunkSize) || 10));
+  const classGroups = [];
+  for (let i = 0; i < classes.length; i += chunkSize) {
+    classGroups.push(classes.slice(i, i + chunkSize));
+  }
+
+  const rawClassTargetMap =
+    classTargetByRootId instanceof Map
+      ? classTargetByRootId
+      : (classTargetByRootId && typeof classTargetByRootId === 'object'
+        ? new Map(Object.entries(classTargetByRootId))
+        : new Map());
+  const classTargetMap = new Map();
+  for (const qid of classes) {
+    const rawTarget = Number(rawClassTargetMap.get(qid));
+    if (!Number.isFinite(rawTarget) || rawTarget <= 0) continue;
+    classTargetMap.set(qid, Math.max(1, Math.floor(rawTarget)));
+  }
+  const hasPerClassTargets = classTargetMap.size > 0;
+
   const safeTargetCount = Number(targetCount);
   const hasTargetCount = Number.isFinite(safeTargetCount) && safeTargetCount > 0;
   const target = hasTargetCount ? Math.max(1, Math.floor(safeTargetCount)) : null;
-  const perClassInitialLimit = hasTargetCount
-    ? Math.max(5, Math.ceil(target / Math.min(classes.length, 10)))
+  const perClassAverageTarget = hasPerClassTargets
+    ? Math.ceil(
+        Array.from(classTargetMap.values()).reduce((acc, value) => acc + value, 0) / classTargetMap.size
+      )
+    : null;
+  const perClassInitialLimit = hasPerClassTargets
+    ? Math.max(3, Math.min(20, Math.ceil(perClassAverageTarget / 2)))
+    : (hasTargetCount
+      ? Math.max(5, Math.ceil(target / Math.min(classes.length, 10)))
+      : Math.max(10, Math.min(30, Math.max(1, Number(refillBatchSize) || 10))));
+  const perClassRefillLimit = hasPerClassTargets
+    ? Math.max(1, Math.min(20, Math.floor(Number(refillBatchSize) || 10)))
     : Math.max(10, Math.min(30, Math.max(1, Number(refillBatchSize) || 10)));
-  const offsets = new Map(classes.map((qid) => [qid, 0]));
+  const offsets = new Map(classGroups.map((_, idx) => [`g:${idx}`, 0]));
   const perClassStats = classes.map((qid) => ({
     rootClassId: qid,
+    rootClassLabel:
+      classEntities?.[qid]?.labels?.en?.value ||
+      classEntities?.[qid]?.labels?.es?.value ||
+      classEntities?.[qid]?.labels?.ja?.value ||
+      null,
+    targetPerZone: classTargetMap.has(qid) ? classTargetMap.get(qid) : null,
     fetchedRows: 0,
     requests: 0,
   }));
@@ -964,6 +1009,29 @@ async function wikidataSparqlAroundByRootClasses({
   const allRows = [];
   let fetchedRawRows = 0;
   let rounds = 0;
+  let queryRequests = 0;
+
+  function getPendingClassesForGroup(group = []) {
+    if (!hasPerClassTargets) return group;
+    return group.filter((rootClassId) => {
+      const targetForClass = classTargetMap.get(rootClassId);
+      if (!Number.isFinite(Number(targetForClass))) return true;
+      const stat = statsByClass.get(rootClassId);
+      const fetched = Number(stat?.fetchedRows || 0);
+      return fetched < targetForClass;
+    });
+  }
+
+  function getRemainingPerClassTargetTotal() {
+    if (!hasPerClassTargets) return null;
+    let remaining = 0;
+    for (const [rootClassId, targetForClass] of classTargetMap.entries()) {
+      const stat = statsByClass.get(rootClassId);
+      const fetched = Number(stat?.fetchedRows || 0);
+      remaining += Math.max(0, targetForClass - fetched);
+    }
+    return remaining;
+  }
 
   async function runWithConcurrency(items, mapper, concurrency) {
     const out = [];
@@ -986,31 +1054,43 @@ async function wikidataSparqlAroundByRootClasses({
   }
 
   while (rounds < maxRounds) {
-    const batchLimit = rounds === 0 ? perClassInitialLimit : Math.max(1, refillBatchSize);
+    const batchLimit = rounds === 0 ? perClassInitialLimit : perClassRefillLimit;
+    const remainingPerClassTarget = getRemainingPerClassTargetTotal();
+    if (hasPerClassTargets && Number(remainingPerClassTarget) <= 0) break;
 
     const roundResults = await runWithConcurrency(
-      classes,
-      async (rootClassId) => {
-        const offset = offsets.get(rootClassId) || 0;
+      classGroups,
+      async (group, groupIndex) => {
+        const pendingClasses = getPendingClassesForGroup(group);
+        if (!pendingClasses.length) {
+          return {
+            rootClassIds: group,
+            rows: [],
+          };
+        }
+        const offsetKey = `g:${groupIndex}`;
+        const offset = offsets.get(offsetKey) || 0;
+        const queryLimit = Math.max(1, batchLimit * Math.max(1, pendingClasses.length));
+        queryRequests += 1;
         const rows = await wikidataSparqlAroundTouristAttractions({
           lng,
           lat,
           radiusKm,
-          limit: batchLimit,
+          limit: queryLimit,
           offset,
-          rootClassId,
+          rootClassIds: pendingClasses,
         });
 
         const fetched = Array.isArray(rows) ? rows.length : 0;
-        offsets.set(rootClassId, offset + fetched);
-        const stat = statsByClass.get(rootClassId);
-        if (stat) {
-          stat.requests += 1;
-          stat.fetchedRows += fetched;
+        offsets.set(offsetKey, offset + fetched);
+
+        for (const rootClassId of pendingClasses) {
+          const stat = statsByClass.get(rootClassId);
+          if (stat) stat.requests += 1;
         }
 
         return {
-          rootClassId,
+          rootClassIds: group,
           rows: Array.isArray(rows) ? rows : [],
         };
       },
@@ -1023,11 +1103,18 @@ async function wikidataSparqlAroundByRootClasses({
       fetchedRawRows += rows.length;
       roundAdded += rows.length;
       for (const row of rows) {
+        const matchedRootClassId = parseQidFromUri(row?.rootClass?.value || '');
+        if (matchedRootClassId) {
+          const stat = statsByClass.get(matchedRootClassId);
+          if (stat) stat.fetchedRows += 1;
+        }
         allRows.push(row);
       }
     }
 
     rounds += 1;
+    const remainingAfterRound = getRemainingPerClassTargetTotal();
+    if (hasPerClassTargets && Number(remainingAfterRound) <= 0) break;
     if (target && allRows.length >= target) break;
     if (roundAdded === 0) break;
   }
@@ -1036,6 +1123,9 @@ async function wikidataSparqlAroundByRootClasses({
     rows: allRows,
     fetchedRawRows,
     rounds,
+    queryRequests,
+    classGroupCount: classGroups.length,
+    classChunkSize: chunkSize,
     perClassStats,
   };
 }
@@ -1396,6 +1486,7 @@ async function wikidataTourismSearch(locationInput, limit = 40, options = {}) {
         .filter((x) => /^Q\d+$/.test(x))
     )
   );
+  const classTargetByRootId = options?.classTargetByRootId || {};
 
   let primaryRows = [];
   if (center) {
@@ -1429,6 +1520,7 @@ async function wikidataTourismSearch(locationInput, limit = 40, options = {}) {
       radiusKm,
       targetCount: fetchTargetCount,
       rootClassIds: activeRootClassIds,
+      classTargetByRootId,
       refillBatchSize,
       maxRounds: maxBatchRounds,
       maxConcurrency,
@@ -1438,6 +1530,9 @@ async function wikidataTourismSearch(locationInput, limit = 40, options = {}) {
     const rawRows = Array.isArray(sparqlResult?.rows) ? sparqlResult.rows : [];
     const fetchedRawRows = Number(sparqlResult?.fetchedRawRows || rawRows.length || 0);
     const batchRounds = Number(sparqlResult?.rounds || 1);
+    const queryRequests = Number(sparqlResult?.queryRequests || 0);
+    const classGroupCount = Number(sparqlResult?.classGroupCount || 0);
+    const classChunkSize = Number(sparqlResult?.classChunkSize || 0);
     const perClassStats = Array.isArray(sparqlResult?.perClassStats)
       ? sparqlResult.perClassStats
       : [];
@@ -1525,6 +1620,9 @@ async function wikidataTourismSearch(locationInput, limit = 40, options = {}) {
       type: ctx.type,
       radiusKm,
       rootClassCount: activeRootClassIds.length,
+      classGroupCount,
+      classChunkSize,
+      queryRequests,
       sparqlMs,
       entitiesMs,
       buildCandidatesMs,

@@ -1,13 +1,9 @@
 const googlePlacesService = require('../services/google-places.service');
-const City = require('../models/City');
-const Region = require('../models/Region');
-const Country = require('../models/Country');
 const Zone = require('../models/Zone');
 const {
   findTaxonomyByQid,
   resolveZoneDisplayTypeLabel
 } = require('../services/zones/zone-type-taxonomy.service');
-const { models } = require('mongoose');
 
 // Idiomas soportados para nombres/slugs de lugares.
 // Puedes ajustar esta lista según necesidades reales.
@@ -1937,451 +1933,190 @@ async function syncWikidataZoneHierarchy(startQid) {
 exports.syncZoneHierarchyByQid = async (qid) => syncWikidataZoneHierarchy(qid);
 
 
-async function ensureCountry(name, iso2, detailsByLang) {
-  const query = {};
-  if (iso2) {
-    query.iso2 = iso2;
-  } else if (name) {
-    query.name = name;
-  }
-
-  let doc = await Country.findOne(query);
-
-  if (!doc && name) {
-    const { name: baseName, names, slugs } = buildNamesAndSlugs(
-      detailsByLang,
-      'country',
-      name
-    );
-    const finalName = names.en || baseName;
-
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(finalName || name);
-
-    doc = await Country.create({
-      name: finalName,
-      slug: baseSlug,
-      iso2: iso2 || undefined,
-      // Solo guardamos names/slugs si hay algo útil
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  }
-
-  return doc;
+function titleCase(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
-async function ensureRegion(name, countryDoc, detailsByLang) {
-  if (!name || !countryDoc) return null;
-
-  // Construimos nombres/slugs multi-idioma para la región
-  const { name: baseName, names, slugs } = buildNamesAndSlugs(
-    detailsByLang,
-    'region',
-    name,
-    { countryName: countryDoc?.name }
+function compactObject(obj = {}) {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== null && value !== undefined && value !== '')
   );
-  const finalName = names.en || baseName;
-
-  const query = {
-    name: finalName,
-    countryId: countryDoc._id,
-  };
-
-  let doc = await Region.findOne(query);
-
-  if (!doc) {
-    // Slug principal: region-country (ej: antioquia-colombia)
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(`${finalName || name}-${countryDoc?.name || ''}`);
-
-    doc = await Region.create({
-      name: finalName,
-      slug: baseSlug,
-      countryId: countryDoc._id,
-      country: countryDoc._id,
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  }
-
-  return doc;
 }
 
-async function ensureCity(name, countryDoc, regionDoc, detailsByLang) {
-  if (!name || !countryDoc) return null;
+async function ensureManualZone({
+  name,
+  canonicalType,
+  parentZoneDoc = null,
+  parentCountryDoc = null,
+  detailsByLang = {},
+  source = 'google',
+  externalId = null,
+  iso2 = null,
+  iso3 = null,
+}) {
+  const rawName = String(name || '').trim();
+  if (!rawName || !canonicalType) return null;
 
-  // Construimos nombres/slugs multi-idioma para la ciudad
+  const levelForNames = canonicalType === 'country' ? 'country' : canonicalType === 'region' ? 'region' : 'city';
   const { name: baseName, names, slugs } = buildNamesAndSlugs(
     detailsByLang,
-    'city',
-    name,
-    { countryName: countryDoc?.name, regionName: regionDoc?.name }
+    levelForNames,
+    rawName,
+    { countryName: parentCountryDoc?.name, regionName: parentZoneDoc?.name }
   );
-  const finalName = names.en || baseName;
-
-  const query = {
-    name: finalName,
-    countryId: countryDoc._id,
-  };
-
-  if (regionDoc) {
-    query.regionId = regionDoc._id;
-  }
-
-  let doc = await City.findOne(query);
-
-  if (!doc) {
-    // Slug principal: city-region-country (ej: medellin-antioquia-colombia)
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(`${finalName || name}-${regionDoc?.name || ''}-${countryDoc?.name || ''}`);
-
-    doc = await City.create({
-      name: finalName,
-      slug: baseSlug,
-      countryId: countryDoc._id,
-      country: countryDoc._id,
-      regionId: regionDoc ? regionDoc._id : undefined,
-      region: regionDoc ? regionDoc._id : undefined,
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  }
-
-  return doc;
-};
-
-async function ensureCountryFromWikidata(entity, parentCountryDoc = null) {
-  if (!entity) return null;
-  const labels = getWikidataLabels(entity);
-  const externalId = entity?.id ? String(entity.id) : null;
-  const nameEn = getWikidataLabelEn(entity);
-  const iso2 = (getWikidataClaimValue(entity, 'P297') || '').toString().toUpperCase() || null;
-  const iso3 = (getWikidataClaimValue(entity, 'P298') || '').toString().toUpperCase() || null;
-  const typeIds = getWikidataClaimsIds(entity, 'P31');
-  const classifiedRaw = (await classifyWikidataTypesWithFallback(typeIds, true)) || { type: 'country', typeCode: null };
-  const classified = {
-    type: 'country',
-    typeCode: classifiedRaw.type === 'country' ? classifiedRaw.typeCode : null
-  };
-  const normalizedTypeCode = normalizeTypeCode('country', classified.typeCode, typeIds);
-  assertNoGenericAdministrativeTypeCode({
-    typeCode: normalizedTypeCode || classified.typeCode || null,
-    entityName: nameEn || labels.en || externalId || 'Unknown country',
-    entityQid: externalId
-  });
-  const inferredAdminLevel = inferAdminLevel('country', normalizedTypeCode || classified.typeCode);
-  const cover = getWikidataCoverUrl(entity);
-
-  const { name: finalName, names, slugs } = buildNamesAndSlugsFromLabels(
-    labels,
-    'country',
-    nameEn || labels.en
-  );
+  const finalName = String(names.en || baseName || rawName).trim();
   if (!finalName) return null;
 
   let doc = null;
   if (externalId) {
-    doc = await Country.findOne({ source: 'wikidata', externalId });
+    doc = await Zone.findOne({ source, externalId }).exec();
   }
-  if (!doc && iso2) {
-    doc = await Country.findOne({ iso2 });
+
+  if (!doc && canonicalType === 'country' && iso2) {
+    doc = await Zone.findOne({
+      'taxonomySnapshot.canonicalType': 'country',
+      $or: [{ 'meta.iso2': String(iso2).toUpperCase() }, { name: finalName }]
+    }).exec();
   }
+
   if (!doc) {
-    doc = await Country.findOne({ name: finalName });
-  }
-  if (!doc) {
-    const baseSlug = (slugs && (slugs.en || slugs.es)) || slugifyName(finalName);
-    doc = await Country.create({
+    doc = await Zone.findOne({
       name: finalName,
-      slug: baseSlug,
-      iso2: iso2 || undefined,
-      iso3: iso3 || undefined,
-      typeCode: normalizedTypeCode || classified.typeCode || undefined,
-      adminLevel: Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null,
-      parentCountryId: parentCountryDoc?._id || null,
-      cover: cover || undefined,
-      source: externalId ? 'wikidata' : undefined,
-      externalId: externalId || undefined,
+      parentZoneId: parentZoneDoc?._id || null,
+      'taxonomySnapshot.canonicalType': canonicalType,
+    }).exec();
+  }
+
+  if (!doc) {
+    const ancestry = parentZoneDoc ? [ ...(parentZoneDoc.ancestry || []), parentZoneDoc._id ] : [];
+    const parentLevel = parentZoneDoc && Number.isFinite(Number(parentZoneDoc.level))
+      ? Number(parentZoneDoc.level)
+      : ancestry.length;
+    const level = parentZoneDoc ? parentLevel + 1 : 1;
+    const parentCountryId = canonicalType === 'country'
+      ? null
+      : (parentCountryDoc?._id || parentZoneDoc?.parentCountryId || (zoneSnapshotType(parentZoneDoc) === 'country' ? parentZoneDoc._id : null));
+
+    const displayTypeLabel = resolveZoneDisplayTypeLabel(canonicalType, null) || titleCase(canonicalType);
+    const primarySlug =
+      (slugs && (slugs.en || slugs.es)) ||
+      slugifyName(finalName);
+
+    doc = await Zone.create({
+      parentZoneId: parentZoneDoc?._id || null,
+      parentCountryId,
+      ancestry,
+      name: finalName,
+      slug: primarySlug,
       ...(Object.keys(names).length ? { names } : {}),
       ...(Object.keys(slugs).length ? { slugs } : {}),
+      taxonomySnapshot: {
+        canonicalType,
+        typeCode: null,
+        qid: null,
+        taxonomyId: null,
+        displayTypeLabel,
+        wikidataName: null,
+        numberOfSteps: 0,
+        auditStatus: 'approved',
+      },
+      level,
+      source,
+      externalId: externalId || null,
+      meta: compactObject({
+        iso2: iso2 ? String(iso2).toUpperCase() : null,
+        iso3: iso3 ? String(iso3).toUpperCase() : null,
+      }),
     });
   } else {
     let changed = false;
-    if ((!doc.typeCode || doc.typeCode.startsWith('wikidata:')) && (normalizedTypeCode || classified.typeCode)) {
-      doc.typeCode = normalizedTypeCode || classified.typeCode;
+    if (!doc.taxonomySnapshot || doc.taxonomySnapshot.canonicalType !== canonicalType) {
+      doc.taxonomySnapshot = doc.taxonomySnapshot || {};
+      doc.taxonomySnapshot.canonicalType = canonicalType;
+      if (!doc.taxonomySnapshot.displayTypeLabel) {
+        doc.taxonomySnapshot.displayTypeLabel = resolveZoneDisplayTypeLabel(canonicalType, null) || titleCase(canonicalType);
+      }
       changed = true;
     }
-    if (doc.adminLevel == null && Number.isFinite(inferredAdminLevel)) {
-      doc.adminLevel = inferredAdminLevel;
-      changed = true;
-    }
-    if (!doc.parentCountryId && parentCountryDoc?._id) {
-      doc.parentCountryId = parentCountryDoc._id;
-      changed = true;
-    }
-    if (!doc.source && externalId) {
-      doc.source = 'wikidata';
-      changed = true;
-    }
-    if (!doc.externalId && externalId) {
-      doc.externalId = externalId;
-      changed = true;
-    }
-    if (!doc.cover && cover) {
-      doc.cover = cover;
+    if (canonicalType === 'country' && !doc.parentCountryId) {
+      doc.parentCountryId = doc._id;
       changed = true;
     }
     if (changed) await doc.save();
   }
+
+  if (canonicalType === 'country' && !doc.parentCountryId) {
+    doc.parentCountryId = doc._id;
+    await doc.save();
+  }
+
   return doc;
+}
+
+async function ensureCountry(name, iso2, detailsByLang) {
+  const fallback = String(name || '').trim() || String(iso2 || '').trim();
+  if (!fallback) return null;
+  return ensureManualZone({
+    name: fallback,
+    canonicalType: 'country',
+    detailsByLang,
+    iso2: iso2 || null,
+  });
+}
+
+async function ensureRegion(name, countryDoc, detailsByLang) {
+  if (!name || !countryDoc) return null;
+  return ensureManualZone({
+    name,
+    canonicalType: 'region',
+    parentZoneDoc: countryDoc,
+    parentCountryDoc: countryDoc,
+    detailsByLang,
+  });
+}
+
+async function ensureCity(name, countryDoc, regionDoc, detailsByLang) {
+  if (!name || !countryDoc) return null;
+  return ensureManualZone({
+    name,
+    canonicalType: 'city',
+    parentZoneDoc: regionDoc || countryDoc,
+    parentCountryDoc: countryDoc,
+    detailsByLang,
+  });
+}
+
+async function ensureCountryFromWikidata(entity, parentCountryDoc = null) {
+  if (!entity) return null;
+  let targetEntity = entity;
+  const typeIds = getWikidataClaimsIds(entity, 'P31');
+  const classified = await classifyWikidataTypesWithFallback(typeIds, false);
+  if (classified?.type !== 'country') {
+    const countryQid = getWikidataClaimsIds(entity, 'P17')?.[0];
+    if (countryQid) {
+      const countryMap = await wikidataGetEntities([countryQid]);
+      if (countryMap?.[countryQid]) targetEntity = countryMap[countryQid];
+    }
+  }
+  return ensureZoneFromWikidataEntity(targetEntity, parentCountryDoc, parentCountryDoc);
 }
 
 async function ensureRegionFromWikidata(entity, countryDoc) {
   if (!entity || !countryDoc) return null;
-  const labels = getWikidataLabels(entity);
-  const externalId = entity?.id ? String(entity.id) : null;
-  const nameEn = getWikidataLabelEn(entity);
-  const adminLevel = parseWikidataNumber(getWikidataClaimValue(entity, 'P274'));
-  const typeIds = getWikidataClaimsIds(entity, 'P31');
-  const classifiedRaw = (await classifyWikidataTypesWithFallback(typeIds, true)) || { type: 'region', typeCode: null };
-  const classified = {
-    type: 'region',
-    typeCode: classifiedRaw.type === 'region' ? classifiedRaw.typeCode : null
-  };
-  const normalizedTypeCode = normalizeTypeCode('region', classified.typeCode, typeIds);
-  assertNoGenericAdministrativeTypeCode({
-    typeCode: normalizedTypeCode || classified.typeCode || null,
-    entityName: nameEn || labels.en || externalId || 'Unknown region',
-    entityQid: externalId
-  });
-  const inferredAdminLevel = inferAdminLevel('region', normalizedTypeCode || classified.typeCode);
-  const cover = getWikidataCoverUrl(entity);
-  const { name: finalName, names, slugs } = buildNamesAndSlugsFromLabels(
-    labels,
-    'region',
-    nameEn || labels.en,
-    { countryName: countryDoc?.name }
-  );
-  if (!finalName) return null;
-
-  const query = externalId
-    ? { source: 'wikidata', externalId }
-    : { name: finalName, countryId: countryDoc._id };
-  let doc = await Region.findOne(query);
-  if (!doc) {
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(`${finalName}-${countryDoc?.name || ''}`);
-    doc = await Region.create({
-      name: finalName,
-      slug: baseSlug,
-      countryId: countryDoc._id,
-      adminLevel: Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null),
-      typeCode: normalizedTypeCode || classified.typeCode || undefined,
-      cover: cover || undefined,
-      source: externalId ? 'wikidata' : undefined,
-      externalId: externalId || undefined,
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  } else {
-    let changed = false;
-    if ((!doc.typeCode || doc.typeCode.startsWith('wikidata:')) && (normalizedTypeCode || classified.typeCode)) {
-      doc.typeCode = normalizedTypeCode || classified.typeCode;
-      changed = true;
-    }
-    const desiredAdmin = Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null);
-    if (doc.adminLevel == null && desiredAdmin != null) {
-      doc.adminLevel = desiredAdmin;
-      changed = true;
-    }
-    if (!doc.source && externalId) {
-      doc.source = 'wikidata';
-      changed = true;
-    }
-    if (!doc.externalId && externalId) {
-      doc.externalId = externalId;
-      changed = true;
-    }
-    if (!doc.cover && cover) {
-      doc.cover = cover;
-      changed = true;
-    }
-    if (changed) await doc.save();
-  }
-  return doc;
+  const regionEntity = (await resolveWikidataRegionEntity(entity)) || entity;
+  return ensureZoneFromWikidataEntity(regionEntity, countryDoc, countryDoc);
 }
 
 async function ensureCityFromWikidata(entity, countryDoc, regionDoc, typeCode = null) {
   if (!entity || !countryDoc) return null;
-  const labels = getWikidataLabels(entity);
-  const externalId = entity?.id ? String(entity.id) : null;
-  const nameEn = getWikidataLabelEn(entity);
-  const cover = getWikidataCoverUrl(entity);
-  let timeZone = await getWikidataTimeZoneIana(entity);
-  if (!timeZone) {
-    const coord = getWikidataCoordinates(entity);
-    if (coord) {
-      timeZone = await resolveTimeZoneFromCoordinates(coord.lat, coord.lng);
-    }
-  }
-  const adminLevel = parseWikidataNumber(getWikidataClaimValue(entity, 'P274'));
-  const normalizedTypeCode = normalizeTypeCode('city', typeCode, getWikidataClaimsIds(entity, 'P31'));
-  const inferredAdminLevel = inferAdminLevel('city', normalizedTypeCode || typeCode);
-  const { name: finalName, names, slugs } = buildNamesAndSlugsFromLabels(
-    labels,
-    'city',
-    nameEn || labels.en,
-    { countryName: countryDoc?.name, regionName: regionDoc?.name }
-  );
-  if (!finalName) return null;
-
-  const query = externalId
-    ? { source: 'wikidata', externalId }
-    : { name: finalName, countryId: countryDoc._id };
-  if (regionDoc) query.regionId = regionDoc._id;
-
-  let doc = await City.findOne(query);
-  if (!doc && regionDoc) {
-    // fallback: city exists without regionId, update to link region
-    doc = await City.findOne({
-      name: finalName,
-      countryId: countryDoc._id,
-      regionId: { $in: [null, undefined] }
-    });
-    if (doc) {
-      doc.regionId = regionDoc._id;
-      if ((!doc.typeCode || doc.typeCode.startsWith('wikidata:')) && (normalizedTypeCode || typeCode)) {
-        doc.typeCode = normalizedTypeCode || typeCode;
-      }
-      const desiredAdmin = Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null);
-      if (doc.adminLevel == null && desiredAdmin != null) doc.adminLevel = desiredAdmin;
-      if (!doc.source && externalId) doc.source = 'wikidata';
-      if (!doc.externalId && externalId) doc.externalId = externalId;
-      await doc.save();
-    }
-  }
-
-  if (!doc) {
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(`${finalName}-${regionDoc?.name || ''}-${countryDoc?.name || ''}`);
-    doc = await City.create({
-      name: finalName,
-      slug: baseSlug,
-      countryId: countryDoc._id,
-      regionId: regionDoc ? regionDoc._id : undefined,
-      cover: cover || undefined,
-      timeZone: timeZone || undefined,
-      typeCode: normalizedTypeCode || typeCode || undefined,
-      adminLevel: Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null),
-      source: externalId ? 'wikidata' : undefined,
-      externalId: externalId || undefined,
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  } else {
-    let changed = false;
-    if ((!doc.typeCode || doc.typeCode.startsWith('wikidata:')) && (normalizedTypeCode || typeCode)) {
-      doc.typeCode = normalizedTypeCode || typeCode;
-      changed = true;
-    }
-    const desiredAdmin = Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null);
-    if (doc.adminLevel == null && desiredAdmin != null) {
-      doc.adminLevel = desiredAdmin;
-      changed = true;
-    }
-    if (!doc.source && externalId) {
-      doc.source = 'wikidata';
-      changed = true;
-    }
-    if (!doc.externalId && externalId) {
-      doc.externalId = externalId;
-      changed = true;
-    }
-    if (!doc.cover && cover) {
-      doc.cover = cover;
-      changed = true;
-    }
-    if (!doc.timeZone && timeZone) {
-      doc.timeZone = timeZone;
-      changed = true;
-    }
-    if (changed) await doc.save();
-  }
-  return doc;
+  return ensureZoneFromWikidataEntity(entity, regionDoc || countryDoc, countryDoc);
 }
 
 async function ensureNeighborhoodFromWikidata(entity, countryDoc, regionDoc, cityDoc, typeCode = null) {
   if (!entity || !countryDoc || !cityDoc) return null;
-  const labels = getWikidataLabels(entity);
-  const externalId = entity?.id ? String(entity.id) : null;
-  const nameEn = getWikidataLabelEn(entity);
-  const cover = getWikidataCoverUrl(entity);
-  const adminLevel = parseWikidataNumber(getWikidataClaimValue(entity, 'P274'));
-  const normalizedTypeCode = normalizeTypeCode('neighborhood', typeCode, getWikidataClaimsIds(entity, 'P31'));
-  const inferredAdminLevel = inferAdminLevel('neighborhood', normalizedTypeCode || typeCode);
-  const { name: finalName, names, slugs } = buildNamesAndSlugsFromLabels(
-    labels,
-    'city',
-    nameEn || labels.en,
-    { countryName: countryDoc?.name, regionName: regionDoc?.name }
-  );
-  if (!finalName) return null;
-
-  const query = externalId
-    ? { source: 'wikidata', externalId }
-    : { name: finalName, countryId: countryDoc._id, cityId: cityDoc._id };
-  let doc = await (models.Neighborhood || require('../models/Neighborhood')).findOne(query);
-
-  if (!doc) {
-    const baseSlug =
-      (slugs && (slugs.en || slugs.es)) ||
-      slugifyName(`${finalName}-${cityDoc?.name || ''}-${countryDoc?.name || ''}`);
-    doc = await (models.Neighborhood || require('../models/Neighborhood')).create({
-      name: finalName,
-      slug: baseSlug,
-      countryId: countryDoc._id,
-      regionId: regionDoc ? regionDoc._id : undefined,
-      cityId: cityDoc._id,
-      cover: cover || undefined,
-      typeCode: normalizedTypeCode || typeCode || undefined,
-      adminLevel: Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null),
-      source: externalId ? 'wikidata' : undefined,
-      externalId: externalId || undefined,
-      ...(Object.keys(names).length ? { names } : {}),
-      ...(Object.keys(slugs).length ? { slugs } : {}),
-    });
-  } else {
-    let changed = false;
-    if ((!doc.typeCode || doc.typeCode.startsWith('wikidata:')) && (normalizedTypeCode || typeCode)) {
-      doc.typeCode = normalizedTypeCode || typeCode;
-      changed = true;
-    }
-    const desiredAdmin = Number.isFinite(adminLevel) ? adminLevel : (Number.isFinite(inferredAdminLevel) ? inferredAdminLevel : null);
-    if (doc.adminLevel == null && desiredAdmin != null) {
-      doc.adminLevel = desiredAdmin;
-      changed = true;
-    }
-    if (!doc.source && externalId) {
-      doc.source = 'wikidata';
-      changed = true;
-    }
-    if (!doc.externalId && externalId) {
-      doc.externalId = externalId;
-      changed = true;
-    }
-    if (!doc.cover && cover) {
-      doc.cover = cover;
-      changed = true;
-    }
-    if (changed) await doc.save();
-  }
-  return doc;
+  return ensureZoneFromWikidataEntity(entity, cityDoc, countryDoc);
 }
 
 async function resolveWikidataRegionEntity(startEntity) {

@@ -23,6 +23,29 @@ function normalizeNameKey(value = '') {
     .replace(/\s+/g, ' ');
 }
 
+const DISCOVER_TARGET_PER_ZONE_DEFAULT = 12;
+const DISCOVER_TARGET_PER_ZONE_MIN = 1;
+const DISCOVER_TARGET_PER_ZONE_MAX = 200;
+
+function normalizeDiscoverConfig(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const rawEnabled = source.enabled;
+  const rawTarget = Number(source.targetPerZone);
+
+  const enabled = typeof rawEnabled === 'boolean' ? rawEnabled : true;
+  const targetPerZone = Number.isFinite(rawTarget)
+    ? Math.max(
+        DISCOVER_TARGET_PER_ZONE_MIN,
+        Math.min(DISCOVER_TARGET_PER_ZONE_MAX, Math.floor(rawTarget))
+      )
+    : DISCOVER_TARGET_PER_ZONE_DEFAULT;
+
+  return {
+    enabled,
+    targetPerZone,
+  };
+}
+
 const ActivityCategorySchema = new Schema(
   {
     slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
@@ -54,6 +77,15 @@ const ActivityCategorySchema = new Schema(
       },
     },
     tagsTypes: [{ type: Schema.Types.ObjectId, ref: 'ServiceTag' }],
+    discover: {
+      enabled: { type: Boolean, default: true },
+      targetPerZone: {
+        type: Number,
+        default: DISCOVER_TARGET_PER_ZONE_DEFAULT,
+        min: DISCOVER_TARGET_PER_ZONE_MIN,
+        max: DISCOVER_TARGET_PER_ZONE_MAX,
+      },
+    },
     isActive: { type: Boolean, default: true },
   },
   {
@@ -70,6 +102,7 @@ ActivityCategorySchema.pre('validate', function normalizeFields(next) {
   this.nameKey = normalizeNameKey(this.name || '');
   if (this.source) this.source = String(this.source).trim().toLowerCase();
   if (this.externalId) this.externalId = String(this.externalId).trim().toUpperCase();
+  this.discover = normalizeDiscoverConfig(this.discover);
 
   const inputNames = this.names && typeof this.names === 'object'
     ? Object.fromEntries(this.names)
@@ -125,6 +158,9 @@ ActivityCategorySchema.pre('findOneAndUpdate', function normalizeUpdate(next) {
   const nextSlug = (update.slug || update.$set?.slug || '').toString();
   const nextNames = update.names || update.$set?.names;
   const nextSlugs = update.slugs || update.$set?.slugs;
+  const hasDiscoverUpdate =
+    Object.prototype.hasOwnProperty.call(update, 'discover') ||
+    Object.prototype.hasOwnProperty.call(update.$set || {}, 'discover');
 
   const $set = {
     ...(update.$set || {}),
@@ -163,6 +199,13 @@ ActivityCategorySchema.pre('findOneAndUpdate', function normalizeUpdate(next) {
     if (Object.keys(normalizedSlugs).length) {
       $set.slugs = normalizedSlugs;
     }
+  }
+
+  if (hasDiscoverUpdate) {
+    const nextDiscover = Object.prototype.hasOwnProperty.call(update, 'discover')
+      ? update.discover
+      : update.$set?.discover;
+    $set.discover = normalizeDiscoverConfig(nextDiscover);
   }
 
   this.setUpdate({

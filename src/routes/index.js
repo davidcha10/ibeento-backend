@@ -1,9 +1,5 @@
 const { Router } = require('express');
 const authRoutes = require('./auth.routes');
-const countriesRoutes = require('./countries.routes');
-const regionsRoutes = require('./regions.routes');
-const citiesRoutes = require('./cities.routes');
-const neighborhoodsRoutes = require('./neighborhoods.routes');
 const zonesRoutes = require('./zones.routes');
 const locationsRoutes = require('./locations.routes');
 const itinerariesRoutes = require('./itineraries.routes');
@@ -37,10 +33,6 @@ const billingRoutes = require('./billing.routes');
 const router = Router();
 
 router.use('/auth', authRoutes);
-router.use('/countries', countriesRoutes);
-router.use('/regions', regionsRoutes);
-router.use('/cities', citiesRoutes);
-router.use('/neighborhoods', neighborhoodsRoutes);
 router.use('/zones', zonesRoutes);
 router.use('/locations', locationsRoutes);
 router.use('/itineraries', itinerariesRoutes);
