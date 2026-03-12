@@ -252,7 +252,7 @@ exports.createZone = async (req, res) => {
       geo,
       active,
       priority,
-      meta
+      discoverPreviewSearched
     } = req.body;
 
     const namesObj = sanitizeStringMap(names);
@@ -309,7 +309,7 @@ exports.createZone = async (req, res) => {
       geo: normalizeGeo(geo),
       active: typeof active === "boolean" ? active : true,
       priority: Number.isFinite(Number(priority)) ? Number(priority) : 100,
-      meta: meta && typeof meta === "object" && !Array.isArray(meta) ? meta : {}
+      discoverPreviewSearched: typeof discoverPreviewSearched === "boolean" ? discoverPreviewSearched : false
     };
 
     if (payload.taxonomySnapshot?.canonicalType === "country" && !payload.parentCountryId) {
@@ -449,7 +449,7 @@ exports.updateZone = async (req, res) => {
       geo,
       active,
       priority,
-      meta
+      discoverPreviewSearched
     } = req.body;
 
     const payload = {};
@@ -476,9 +476,9 @@ exports.updateZone = async (req, res) => {
     if (timeZone !== undefined) payload.timeZone = timeZone ? String(timeZone).trim() : null;
     if (active !== undefined) payload.active = !!active;
     if (priority !== undefined) payload.priority = Number.isFinite(Number(priority)) ? Number(priority) : 100;
+    if (discoverPreviewSearched !== undefined) payload.discoverPreviewSearched = !!discoverPreviewSearched;
     if (level !== undefined) payload.level = parseNumberOrNull(level);
     if (adminLevel !== undefined) payload.adminLevel = parseNumberOrNull(adminLevel);
-    if (meta !== undefined) payload.meta = meta && typeof meta === "object" && !Array.isArray(meta) ? meta : {};
     if (slug !== undefined) payload.slug = slug ? String(slug).trim() : undefined;
 
     if (names !== undefined) payload.names = sanitizeStringMap(names);

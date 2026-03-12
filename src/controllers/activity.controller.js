@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Activity = require('../models/Activity');
+const BusinessUnit = require('../models/BusinessUnit');
 const Zone = require('../models/Zone');
 const ActivityCategory = require('../models/ActivityCategory');
 const { Service } = require('../models/Service');
@@ -13,6 +14,7 @@ const { scoreActivitiesForUser } = require('../services/activity/activity-scorin
 const {
   wikidataTourismSearch,
   wikidataSearchSingleActivityByText,
+  wikidataGetEntitiesRaw,
 } = require('../services/activity/open-source.service');
 
 function collectActivityCategoryIds(activity) {
@@ -191,6 +193,12 @@ function normalizeObjectIdString(value) {
   return asString;
 }
 
+function buildManualActivityExternalRefId(activityId) {
+  const normalizedId = normalizeObjectIdString(activityId);
+  if (!normalizedId) return '';
+  return `manual:activity:${normalizedId}`;
+}
+
 function normalizeZoneType(value) {
   const raw = String(value || '').trim().toLowerCase();
   return raw || 'city';
@@ -252,6 +260,24 @@ async function loadDiscoverClassConfig() {
     { externalId: 1, discover: 1 }
   ).lean();
   return buildDiscoverClassConfig(activityCategories);
+}
+
+async function hasZoneBeenDiscoverPreviewSearched(zoneId) {
+  const normalizedZoneId = normalizeObjectIdString(zoneId);
+  if (!normalizedZoneId) return false;
+
+  const zone = await Zone.findById(normalizedZoneId)
+    .select('discoverPreviewSearched')
+    .lean();
+  return !!zone?.discoverPreviewSearched;
+}
+
+async function markZoneDiscoverPreviewSearched(zoneId) {
+  const normalizedZoneId = normalizeObjectIdString(zoneId);
+  if (!normalizedZoneId) return;
+  await Zone.findByIdAndUpdate(normalizedZoneId, {
+    $set: { discoverPreviewSearched: true },
+  }).lean();
 }
 
 function buildActivityLocationFilter(location = null) {
@@ -473,6 +499,24 @@ function updateDiscoverPreviewJobProgress(job, patch = {}) {
   if (Array.isArray(patch.destinations)) {
     job.progress.destinations = normalizeProgressDestinations(patch.destinations);
   }
+  if (patch.currentDestinationId !== undefined) {
+    job.progress.currentDestinationId = patch.currentDestinationId
+      ? String(patch.currentDestinationId)
+      : null;
+  }
+  if (patch.currentDestinationLabel !== undefined) {
+    job.progress.currentDestinationLabel = patch.currentDestinationLabel
+      ? String(patch.currentDestinationLabel)
+      : null;
+  }
+  if (Number.isFinite(Number(patch.currentDestinationIndex))) {
+    job.progress.currentDestinationIndex = Math.max(0, Number(patch.currentDestinationIndex));
+  } else if (patch.currentDestinationIndex === null) {
+    job.progress.currentDestinationIndex = null;
+  }
+  if (patch.currentStep !== undefined) {
+    job.progress.currentStep = patch.currentStep ? String(patch.currentStep) : null;
+  }
 
   const explicitPercent = Number(patch.percent);
   if (Number.isFinite(explicitPercent)) {
@@ -501,6 +545,12 @@ function serializeDiscoverPreviewJob(job, options = {}) {
       destinationsTotal: job.progress?.destinationsTotal || 0,
       destinationsCompleted: job.progress?.destinationsCompleted || 0,
       destinations: normalizeProgressDestinations(job.progress?.destinations || []),
+      currentDestinationId: job.progress?.currentDestinationId || null,
+      currentDestinationLabel: job.progress?.currentDestinationLabel || null,
+      currentDestinationIndex: Number.isFinite(Number(job.progress?.currentDestinationIndex))
+        ? Number(job.progress.currentDestinationIndex)
+        : null,
+      currentStep: job.progress?.currentStep || null,
     },
     createdAt: job.createdAt,
     startedAt: job.startedAt,
@@ -542,11 +592,21 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
   report({
     stage: 'preparing',
     destinationsCompleted: 0,
+    currentDestinationId: null,
+    currentDestinationLabel: null,
+    currentDestinationIndex: null,
+    currentStep: 'init',
+    message: 'Preparing your activity recommendations...',
   });
 
   // Fallback global: if no locations are selected, return a priority-sorted feed.
   if (locations.length === 0) {
-    report({ stage: 'collecting', destinationsCompleted: 0 });
+    report({
+      stage: 'collecting',
+      destinationsCompleted: 0,
+      currentStep: 'global-db-fetch',
+      message: 'Loading activities...',
+    });
     const dbFetchStartMs = Date.now();
     const dbActivities = await Activity.find({ active: true })
       .populate('tags', 'name slug')
@@ -584,7 +644,12 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       };
     });
 
-    report({ stage: 'evaluating', destinationsCompleted: 0 });
+    report({
+      stage: 'evaluating',
+      destinationsCompleted: 0,
+      currentStep: 'global-ranking',
+      message: 'Organizing the best options...',
+    });
     const hydratedDb = await hydrateActivitiesZonePath(enrichedDb);
     const scoreStartMs = Date.now();
     const scored = await scoreActivitiesForUser(hydratedDb, userId);
@@ -599,10 +664,17 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       totalMs,
     });
 
-    report({ stage: 'done', percent: 100, destinationsCompleted: 0 });
+    report({
+      stage: 'done',
+      percent: 100,
+      destinationsCompleted: 0,
+      currentStep: 'complete',
+      message: 'Activities are ready.',
+    });
     return {
       data: limited,
       meta: {
+        persistedAddedCount: 0,
         skippedWithoutGeoCount: 0,
         skippedWithoutGeo: [],
         persistErrorCount: 0,
@@ -614,11 +686,17 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
   const allRows = [];
   const skippedWithoutGeo = [];
   const persistErrors = [];
+  let persistedAddedCount = 0;
   const { rootClassIds, classTargetByRootId } = await loadDiscoverClassConfig();
 
   report({
     stage: 'collecting',
     destinationsCompleted: 0,
+    currentDestinationId: null,
+    currentDestinationLabel: null,
+    currentDestinationIndex: null,
+    currentStep: 'start',
+    message: 'Searching activities for your destination...',
   });
 
   let completedDestinations = 0;
@@ -636,6 +714,11 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       report({
         stage: 'collecting',
         destinationsCompleted: completedDestinations,
+        currentDestinationId: l?._id ? String(l._id) : null,
+        currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+        currentDestinationIndex: idx + 1,
+        currentStep: 'skip-invalid-filter',
+        message: 'We could not process one destination. Continuing with the others.',
       });
       continue;
     }
@@ -647,6 +730,11 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
     report({
       stage: 'collecting',
       destinationsCompleted: completedDestinations,
+      currentDestinationId: l?._id ? String(l._id) : null,
+      currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+      currentDestinationIndex: idx + 1,
+      currentStep: 'db-check',
+      message: 'Checking available activities...',
     });
 
     const dbFetchStartMs = Date.now();
@@ -697,6 +785,11 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       report({
         stage: 'collecting',
         destinationsCompleted: completedDestinations,
+        currentDestinationId: l?._id ? String(l._id) : null,
+        currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+        currentDestinationIndex: idx + 1,
+        currentStep: 'db-sufficient',
+        message: 'We found activities for this destination.',
       });
 
       console.log('[discoverPreview][timing]', {
@@ -710,6 +803,45 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       continue;
     }
 
+    const hasCompletedSearchState = await hasZoneBeenDiscoverPreviewSearched(l?._id);
+    if (hasCompletedSearchState) {
+      progressDestinations[idx] = {
+        ...progressDestinations[idx],
+        status: 'done',
+        acceptedCount: dbActivities.length,
+      };
+      completedDestinations += 1;
+      report({
+        stage: 'collecting',
+        destinationsCompleted: completedDestinations,
+        currentDestinationId: l?._id ? String(l._id) : null,
+        currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+        currentDestinationIndex: idx + 1,
+        currentStep: 'skip-searched',
+        message: 'Using previously prepared activities for this destination.',
+      });
+
+      console.log('[discoverPreview][timing]', {
+        locationId: String(l._id),
+        locationType: l.type,
+        minRequired,
+        fromDbOnly: true,
+        skippedExternalSearchByPersistedState: true,
+        dbFetchMs,
+        totalLocationMs: Date.now() - locationStartMs,
+      });
+      continue;
+    }
+
+    report({
+      stage: 'collecting',
+      destinationsCompleted: completedDestinations,
+      currentDestinationId: l?._id ? String(l._id) : null,
+      currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+      currentDestinationIndex: idx + 1,
+      currentStep: 'resolve-context',
+      message: 'Verifying destination details...',
+    });
     const resolveCtxStartMs = Date.now();
     const locationContext = await resolveLocationContextForPreview(l);
     const resolveCtxMs = Date.now() - resolveCtxStartMs;
@@ -723,28 +855,87 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       report({
         stage: 'collecting',
         destinationsCompleted: completedDestinations,
+        currentDestinationId: l?._id ? String(l._id) : null,
+        currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+        currentDestinationIndex: idx + 1,
+        currentStep: 'context-missing',
+        message: 'We could not verify this destination yet.',
       });
       continue;
     }
 
-    const openSearchStartMs = Date.now();
-    const openCandidates = await wikidataTourismSearch(locationContext, null, {
-      rootClassIds,
-      classTargetByRootId,
+    report({
+      stage: 'collecting',
+      destinationsCompleted: completedDestinations,
+      currentDestinationId: l?._id ? String(l._id) : null,
+      currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+      currentDestinationIndex: idx + 1,
+      currentStep: 'external-search',
+      message: 'Searching for more activities...',
     });
+    const openSearchStartMs = Date.now();
+    let openCandidates = [];
+    let externalSearchMode = 'configured';
+    try {
+      openCandidates = await wikidataTourismSearch(locationContext, null, {
+        rootClassIds,
+        classTargetByRootId,
+      });
+    } catch (primarySearchErr) {
+      console.warn('[discoverPreview] primary external search failed; retrying with default class set', {
+        locationId: String(l?._id || ''),
+        locationType: l?.type || null,
+        error: primarySearchErr?.message || primarySearchErr,
+      });
+      report({
+        stage: 'collecting',
+        destinationsCompleted: completedDestinations,
+        currentDestinationId: l?._id ? String(l._id) : null,
+        currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+        currentDestinationIndex: idx + 1,
+        currentStep: 'external-search-retry',
+        message: 'This is taking longer than expected. Retrying now...',
+      });
+      openCandidates = await wikidataTourismSearch(locationContext, null, {});
+      externalSearchMode = 'fallback-default-classes';
+    }
     const openCandidatesFiltered = openCandidates.filter(
       (row) => Number(row?._preview?.sitelinksCount || 0) >= minSitelinks
     );
     const openSearchMs = Date.now() - openSearchStartMs;
+    report({
+      stage: 'collecting',
+      destinationsCompleted: completedDestinations,
+      currentDestinationId: l?._id ? String(l._id) : null,
+      currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+      currentDestinationIndex: idx + 1,
+      currentStep: 'persist-candidates',
+      message: 'Saving activities...',
+    });
     const persistStartMs = Date.now();
     const persistedOpen = await persistOpenCandidatesForLocation(openCandidatesFiltered, l);
     const persistMs = Date.now() - persistStartMs;
+    persistedAddedCount += Number(persistedOpen?.saved?.length || 0);
     allRows.push(...persistedOpen.saved);
     if (persistedOpen.skippedWithoutGeo.length) {
       skippedWithoutGeo.push(...persistedOpen.skippedWithoutGeo);
     }
     if (persistedOpen.failed.length) {
       persistErrors.push(...persistedOpen.failed);
+    }
+    if (persistedOpen.saved.length > 0) {
+      try {
+        await markZoneDiscoverPreviewSearched(l?._id);
+      } catch (stateErr) {
+        console.warn('[discoverPreview] could not mark zone as searched (external_search_completed)', {
+          locationId: String(l?._id || ''),
+          error: stateErr?.message || stateErr,
+        });
+      }
+    } else {
+      console.log('[discoverPreview] external search completed with zero new activities; search state remains active', {
+        locationId: String(l?._id || ''),
+      });
     }
 
     progressDestinations[idx] = {
@@ -756,6 +947,11 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
     report({
       stage: 'collecting',
       destinationsCompleted: completedDestinations,
+      currentDestinationId: l?._id ? String(l._id) : null,
+      currentDestinationLabel: l?.label || l?.name || `Destination ${idx + 1}`,
+      currentDestinationIndex: idx + 1,
+      currentStep: 'destination-complete',
+      message: 'Destination completed.',
     });
 
     console.log('[discoverPreview][timing]', {
@@ -766,6 +962,7 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
       dbFetchMs,
       resolveCtxMs,
       openSearchMs,
+      externalSearchMode,
       persistMs,
       openCandidates: openCandidates.length,
       openCandidatesAfterSitelinksFilter: openCandidatesFiltered.length,
@@ -790,6 +987,11 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
   report({
     stage: 'evaluating',
     destinationsCompleted: completedDestinations,
+    currentDestinationId: null,
+    currentDestinationLabel: null,
+    currentDestinationIndex: null,
+    currentStep: 'dedupe-rank',
+    message: 'Organizing your results...',
   });
 
   const deduped = Array.from(dedupMap.values());
@@ -810,17 +1012,28 @@ async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
   report({
     stage: 'finalizing',
     destinationsCompleted: completedDestinations,
+    currentDestinationId: null,
+    currentDestinationLabel: null,
+    currentDestinationIndex: null,
+    currentStep: 'finalizing',
+    message: 'Finalizing your activity list...',
   });
 
   report({
     stage: 'done',
     percent: 100,
     destinationsCompleted: completedDestinations,
+    currentDestinationId: null,
+    currentDestinationLabel: null,
+    currentDestinationIndex: null,
+    currentStep: 'complete',
+    message: 'Activities are ready.',
   });
 
   return {
     data: scored,
     meta: {
+      persistedAddedCount,
       skippedWithoutGeoCount: skippedWithoutGeo.length,
       skippedWithoutGeo: skippedWithoutGeo.slice(0, 20),
       persistErrorCount: persistErrors.length,
@@ -863,6 +1076,10 @@ exports.discoverPreviewStartJob = async (req, res) => {
         destinationsTotal: locations.length,
         destinationsCompleted: 0,
         destinations: locations.map((loc, idx) => toProgressDestination(loc, idx)),
+        currentDestinationId: null,
+        currentDestinationLabel: null,
+        currentDestinationIndex: null,
+        currentStep: 'queued',
       },
       result: null,
       error: null,
@@ -1523,6 +1740,45 @@ function normalizeQid(value) {
   return /^Q\d+$/.test(qid) ? qid : null;
 }
 
+function normalizeLocaleKey(value = '') {
+  const locale = String(value || '').trim().toLowerCase();
+  if (!locale) return '';
+  return locale.replace(/_/g, '-');
+}
+
+function toPlainLocaleMap(raw = {}) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  if (raw instanceof Map) return Object.fromEntries(raw.entries());
+  return { ...raw };
+}
+
+function sanitizeLocaleMap(raw = {}, { slug = false } = {}) {
+  const input = toPlainLocaleMap(raw);
+  const out = {};
+  for (const [localeRaw, valueRaw] of Object.entries(input)) {
+    const locale = normalizeLocaleKey(localeRaw);
+    if (!locale) continue;
+    const value = slug ? slugify(valueRaw || '') : String(valueRaw || '').trim();
+    if (!value) continue;
+    out[locale] = value;
+  }
+  return out;
+}
+
+function extractLocalizedLabelsFromWikidataEntity(entity = {}) {
+  const labels = entity && typeof entity === 'object' && entity.labels && typeof entity.labels === 'object'
+    ? entity.labels
+    : {};
+  const out = {};
+  for (const [localeRaw, payload] of Object.entries(labels)) {
+    const locale = normalizeLocaleKey(localeRaw);
+    const value = String(payload?.value || '').trim();
+    if (!locale || !value) continue;
+    out[locale] = value;
+  }
+  return out;
+}
+
 async function resolveCandidateSpecificZoneLocation(candidate, baseLocObj = {}, perRequestCache = new Map()) {
   const adminParentQid =
     normalizeQid(candidate?._preview?.adminParentId) ||
@@ -1602,6 +1858,117 @@ function slugify(input = '') {
   return `item-${Date.now()}`;
 }
 
+const ACTIVITY_TYPE_VALUES = new Set([
+  'accommodation',
+  'experience',
+  'food_drinks',
+  'transport',
+  'practical',
+  'practical_services',
+  'place',
+]);
+
+function normalizeActivityTypeValue(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return '';
+  if (value === 'accomodation') return 'accommodation';
+  if (!ACTIVITY_TYPE_VALUES.has(value)) return '';
+  return value;
+}
+
+const BUSINESS_UNIT_WRITE_ROLES = new Set(['owner', 'admin', 'operator']);
+
+function isAdminUser(req) {
+  return String(req?.user?.role || '').trim().toLowerCase() === 'admin';
+}
+
+function requesterId(req) {
+  return String(req?.user?._id || req?.user?.id || '').trim();
+}
+
+function normalizeOwnershipMode(raw) {
+  const mode = String(raw || '').trim().toLowerCase();
+  if (mode === 'global' || mode === 'business_unit') return mode;
+  return '';
+}
+
+function normalizeOwnershipPayload(rawOwnership = {}) {
+  if (!rawOwnership || typeof rawOwnership !== 'object' || Array.isArray(rawOwnership)) {
+    return { ownership: null, error: null };
+  }
+
+  const mode = normalizeOwnershipMode(rawOwnership.mode);
+  if (!mode) {
+    return { ownership: null, error: 'Invalid ownership.mode. Allowed values: global, business_unit' };
+  }
+
+  const businessUnitId = normalizeObjectIdString(rawOwnership.businessUnitId);
+  if (mode === 'business_unit' && !businessUnitId) {
+    return { ownership: null, error: 'ownership.businessUnitId is required when ownership.mode is business_unit' };
+  }
+
+  const createdFromServiceId = normalizeObjectIdString(rawOwnership.createdFromServiceId);
+
+  return {
+    ownership: {
+      mode,
+      businessUnitId: mode === 'business_unit' ? businessUnitId : null,
+      createdFromServiceId: createdFromServiceId || null,
+    },
+    error: null,
+  };
+}
+
+async function hasBusinessUnitWriteAccess(req, businessUnitId) {
+  const normalizedBusinessUnitId = normalizeObjectIdString(businessUnitId);
+  if (!normalizedBusinessUnitId) return false;
+
+  const bu = await BusinessUnit.findById(normalizedBusinessUnitId)
+    .select('_id user teamMembers.userId teamMembers.role teamMembers.status')
+    .lean();
+  if (!bu?._id) return false;
+
+  const requester = requesterId(req);
+  if (!requester) return false;
+  if (String(bu.user || '') === requester) return true;
+
+  const teamMembers = Array.isArray(bu.teamMembers) ? bu.teamMembers : [];
+  return teamMembers.some((member) => {
+    const memberUserId = String(member?.userId || '').trim();
+    const memberRole = String(member?.role || '').trim().toLowerCase();
+    const memberStatus = String(member?.status || '').trim().toLowerCase();
+    return (
+      memberUserId &&
+      memberUserId === requester &&
+      memberStatus === 'active' &&
+      BUSINESS_UNIT_WRITE_ROLES.has(memberRole)
+    );
+  });
+}
+
+async function resolveActivityWriteAccess(activityDoc, req) {
+  if (!activityDoc?._id) return { allowed: false, reason: 'Activity not found' };
+  if (isAdminUser(req)) return { allowed: true, backfillOwnership: null };
+
+  const requester = requesterId(req);
+  if (!requester) return { allowed: false, reason: 'Unauthorized' };
+
+  const mode = normalizeOwnershipMode(activityDoc?.ownership?.mode || 'global') || 'global';
+  const businessUnitId = normalizeObjectIdString(activityDoc?.ownership?.businessUnitId);
+
+  if (mode === 'business_unit' && businessUnitId) {
+    const hasAccess = await hasBusinessUnitWriteAccess(req, businessUnitId);
+    if (hasAccess) return { allowed: true, backfillOwnership: null };
+    return { allowed: false, reason: 'Forbidden: this activity belongs to another business unit' };
+  }
+
+  return { allowed: false, reason: 'Forbidden: global activities are read-only for providers' };
+}
+
+function getActivityDisplayName(activityDoc = {}) {
+  return String(activityDoc?.name || '').trim() || 'Untitled activity';
+}
+
 // ===== Create =====
 exports.create = async (req, res) => {
   try {
@@ -1609,6 +1976,17 @@ exports.create = async (req, res) => {
 
     if (!data.name) {
       return res.status(400).json({ success: false, message: 'name is required' });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'type')) {
+      const normalizedType = normalizeActivityTypeValue(data.type);
+      if (!normalizedType) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid activity type',
+        });
+      }
+      data.type = normalizedType;
     }
 
     // slug
@@ -1626,30 +2004,80 @@ exports.create = async (req, res) => {
     }
     data.location = normalizedLocation;
 
-    // Ensure external reference is unique when provided.
+    // Ensure external reference is always normalized and unique.
     const extProvider = String(data?.externalRef?.provider || '').trim().toLowerCase();
-    const extId = String(data?.externalRef?.id || '').trim();
-    if (extProvider && extId) {
-      const existsExternal = await Activity.findOne({
-        'externalRef.provider': extProvider,
-        'externalRef.id': extId,
-      }).select('_id').lean();
-      if (existsExternal) {
-        return res.status(409).json({
-          success: false,
-          message: 'An activity with this externalId already exists for this provider',
-        });
-      }
-      data.externalRef = {
-        ...(data.externalRef || {}),
-        provider: extProvider,
-        id: extId,
-      };
+    let extId = String(data?.externalRef?.id || '').trim();
+    const extUrl = String(data?.externalRef?.url || '').trim();
+
+    if (!extProvider) {
+      return res.status(400).json({
+        success: false,
+        message: 'externalRef.provider is required',
+      });
     }
+
+    if (extProvider === 'manual' && !extId) {
+      if (!data._id) data._id = new mongoose.Types.ObjectId();
+      extId = buildManualActivityExternalRefId(data._id);
+    }
+
+    if (!extId) {
+      return res.status(400).json({
+        success: false,
+        message: 'externalRef.id is required',
+      });
+    }
+
+    const existsExternal = await Activity.findOne({
+      'externalRef.provider': extProvider,
+      'externalRef.id': extId,
+    }).select('_id').lean();
+    if (existsExternal) {
+      return res.status(409).json({
+        success: false,
+        message: 'An activity with this externalId already exists for this provider',
+      });
+    }
+    data.externalRef = {
+      ...(data.externalRef || {}),
+      provider: extProvider,
+      id: extId,
+      url: extUrl || undefined,
+    };
 
     // Defaults
     if (data.tags && !Array.isArray(data.tags)) data.tags = [data.tags];
     if (data.categories && !Array.isArray(data.categories)) data.categories = [data.categories];
+
+    if (isAdminUser(req)) {
+      const normalized = normalizeOwnershipPayload(data.ownership || { mode: 'global' });
+      if (normalized.error) {
+        return res.status(400).json({ success: false, message: normalized.error });
+      }
+      data.ownership = normalized.ownership || { mode: 'global', businessUnitId: null, createdFromServiceId: null };
+    } else {
+      const normalized = normalizeOwnershipPayload(data.ownership || {});
+      if (normalized.error && !normalized.ownership) {
+        return res.status(400).json({ success: false, message: normalized.error });
+      }
+      const ownership = normalized.ownership;
+      const businessUnitId = ownership?.businessUnitId || null;
+      if (!businessUnitId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ownership.businessUnitId is required for non-admin activity creation',
+        });
+      }
+      const hasAccess = await hasBusinessUnitWriteAccess(req, businessUnitId);
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'Forbidden: no write access to the business unit' });
+      }
+      data.ownership = {
+        mode: 'business_unit',
+        businessUnitId,
+        createdFromServiceId: ownership?.createdFromServiceId || null,
+      };
+    }
 
     // Active default true if not provided
     if (typeof data.active !== 'boolean') data.active = true;
@@ -1678,7 +2106,8 @@ exports.create = async (req, res) => {
     return res.status(201).json({ success: true, data: doc });
   } catch (error) {
     console.error('Error creating Activity:', error);
-    return res.status(500).json({ success: false, message: 'Failed to create Activity', error });
+    const message = String(error?.message || '').trim() || 'Failed to create Activity';
+    return res.status(500).json({ success: false, message, error });
   }
 };
 
@@ -1689,6 +2118,7 @@ exports.list = async (req, res) => {
       q,
       type,
       zoneId,
+      audited,
       active,
       tags,
       categories,
@@ -1711,9 +2141,38 @@ exports.list = async (req, res) => {
       ];
     }
 
-    if (type) filter.type = type; // 'poi'|'experience'|'event'|'route'
+    if (type) {
+      const normalizedTypes = String(type)
+        .split(',')
+        .map((entry) => normalizeActivityTypeValue(entry))
+        .filter(Boolean);
 
-    if (zoneId) filter['location.zonePathIds'] = zoneId;
+      if (!normalizedTypes.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid activity type filter',
+        });
+      }
+
+      filter.type = normalizedTypes.length === 1
+        ? normalizedTypes[0]
+        : { $in: Array.from(new Set(normalizedTypes)) };
+    }
+
+    if (zoneId) {
+      const zoneIds = String(zoneId)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (zoneIds.length === 1) {
+        filter['location.zonePathIds'] = zoneIds[0];
+      } else if (zoneIds.length > 1) {
+        filter['location.zonePathIds'] = { $in: zoneIds };
+      }
+    }
+
+    if (audited === 'true') filter['audit.isAudited'] = true;
+    if (audited === 'false') filter['audit.isAudited'] = false;
 
     if (active === 'true')  filter.active = true;
     if (active === 'false') filter.active = false;
@@ -1773,7 +2232,41 @@ exports.list = async (req, res) => {
       Activity.countDocuments(filter)
     ]);
 
-    return res.status(200).json({ success: true, data: results, total, limit: lim, offset: off });
+    const activityObjectIds = (Array.isArray(results) ? results : [])
+      .map((row) => String(row?._id || '').trim())
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    let serviceCountByActivityId = new Map();
+    if (activityObjectIds.length) {
+      const counts = await Service.aggregate([
+        {
+          $match: {
+            activityId: { $in: activityObjectIds },
+            isActive: true,
+          },
+        },
+        {
+          $group: {
+            _id: '$activityId',
+            total: { $sum: 1 },
+          },
+        },
+      ]);
+      serviceCountByActivityId = new Map(
+        (Array.isArray(counts) ? counts : []).map((row) => [
+          String(row?._id || '').trim(),
+          Number(row?.total || 0),
+        ])
+      );
+    }
+
+    const enrichedResults = (Array.isArray(results) ? results : []).map((row) => ({
+      ...row,
+      serviceCount: serviceCountByActivityId.get(String(row?._id || '').trim()) || 0,
+    }));
+
+    return res.status(200).json({ success: true, data: enrichedResults, total, limit: lim, offset: off });
   } catch (error) {
     console.error('Error fetching Activities:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch Activities', error });
@@ -1802,8 +2295,13 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const data = { ...req.body };
-    const current = await Activity.findById(id).select('purchaseHint').lean();
+    const current = await Activity.findById(id).select('purchaseHint ownership externalRef').lean();
     if (!current) return res.status(404).json({ success: false, message: 'Activity not found' });
+
+    const writeAccess = await resolveActivityWriteAccess({ ...current, _id: id }, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
 
     // Keep slug consistent / unique if provided or if name changes w/o slug
     if (data.slug) data.slug = slugify(data.slug);
@@ -1821,6 +2319,101 @@ exports.update = async (req, res) => {
     }
 
     if (data.tags && !Array.isArray(data.tags)) data.tags = [data.tags];
+
+    if (Object.prototype.hasOwnProperty.call(data, 'type')) {
+      const normalizedType = normalizeActivityTypeValue(data.type);
+      if (!normalizedType) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid activity type',
+        });
+      }
+      data.type = normalizedType;
+    }
+
+    // Normalize external reference on updates as well.
+    if (Object.prototype.hasOwnProperty.call(data, 'externalRef')) {
+      const extPatch = data.externalRef && typeof data.externalRef === 'object' ? data.externalRef : {};
+      const extProvider =
+        String(
+          Object.prototype.hasOwnProperty.call(extPatch, 'provider')
+            ? extPatch.provider
+            : current?.externalRef?.provider || ''
+        )
+          .trim()
+          .toLowerCase();
+      let extId = String(
+        Object.prototype.hasOwnProperty.call(extPatch, 'id')
+          ? extPatch.id
+          : current?.externalRef?.id || ''
+      ).trim();
+      const extUrl = String(
+        Object.prototype.hasOwnProperty.call(extPatch, 'url')
+          ? extPatch.url
+          : current?.externalRef?.url || ''
+      ).trim();
+
+      if (!extProvider) {
+        return res.status(400).json({
+          success: false,
+          message: 'externalRef.provider is required',
+        });
+      }
+      if (extProvider === 'manual' && !extId) {
+        extId = buildManualActivityExternalRefId(id);
+      }
+      if (!extId) {
+        return res.status(400).json({
+          success: false,
+          message: 'externalRef.id is required',
+        });
+      }
+
+      const existsExternal = await Activity.findOne({
+        _id: { $ne: id },
+        'externalRef.provider': extProvider,
+        'externalRef.id': extId,
+      }).select('_id').lean();
+      if (existsExternal) {
+        return res.status(409).json({
+          success: false,
+          message: 'An activity with this externalId already exists for this provider',
+        });
+      }
+
+      data.externalRef = {
+        ...(current?.externalRef || {}),
+        ...extPatch,
+        provider: extProvider,
+        id: extId,
+        url: extUrl || undefined,
+      };
+    } else if (
+      String(current?.externalRef?.provider || '').trim().toLowerCase() === 'manual' &&
+      !String(current?.externalRef?.id || '').trim()
+    ) {
+      // Backfill legacy manual activities that still have empty externalRef.id.
+      data.externalRef = {
+        ...(current?.externalRef || {}),
+        provider: 'manual',
+        id: buildManualActivityExternalRefId(id),
+      };
+    }
+
+    if (isAdminUser(req)) {
+      if (Object.prototype.hasOwnProperty.call(data, 'ownership')) {
+        const normalized = normalizeOwnershipPayload(data.ownership || {});
+        if (normalized.error) {
+          return res.status(400).json({ success: false, message: normalized.error });
+        }
+        data.ownership = normalized.ownership;
+      }
+    } else {
+      delete data.ownership;
+      if (writeAccess.backfillOwnership) {
+        data.ownership = writeAccess.backfillOwnership;
+      }
+    }
 
     // Ensure slug is unique if changed
     if (data.slug) {
@@ -1852,7 +2445,198 @@ exports.update = async (req, res) => {
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
     console.error('Error updating Activity:', error);
-    return res.status(500).json({ success: false, message: 'Failed to update Activity', error });
+    const message = String(error?.message || '').trim() || 'Failed to update Activity';
+    return res.status(500).json({ success: false, message, error });
+  }
+};
+
+// ===== Acquire ownership =====
+exports.acquireOwnership = async (req, res) => {
+  try {
+    const activityId = normalizeObjectIdString(req?.params?.id);
+    if (!activityId) {
+      return res.status(400).json({ success: false, message: 'Invalid activity id' });
+    }
+
+    const businessUnitId = normalizeObjectIdString(
+      req?.body?.businessUnitId || req?.query?.businessUnitId
+    );
+    if (!businessUnitId) {
+      return res.status(400).json({
+        success: false,
+        message: 'businessUnitId is required',
+      });
+    }
+
+    const activity = await Activity.findById(activityId).lean();
+    if (!activity?._id) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    const requesterIsAdmin = isAdminUser(req);
+    const currentMode = normalizeOwnershipMode(activity?.ownership?.mode || 'global') || 'global';
+    const currentBusinessUnitId = normalizeObjectIdString(activity?.ownership?.businessUnitId);
+    const sourceName = getActivityDisplayName(activity);
+
+    if (currentMode === 'business_unit' && currentBusinessUnitId === businessUnitId) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          action: 'already_owned',
+          activityId: String(activity._id),
+          activityName: sourceName,
+          sourceActivityId: String(activity._id),
+          sourceActivityName: sourceName,
+          message: 'This activity already belongs to your business unit.',
+        },
+      });
+    }
+
+    if (!requesterIsAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin can assign or reassign activity ownership to a business unit.',
+      });
+    }
+
+    const businessUnitExists = await BusinessUnit.exists({ _id: businessUnitId });
+    if (!businessUnitExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business unit not found',
+      });
+    }
+
+    const nextOwnership = {
+      mode: 'business_unit',
+      businessUnitId,
+      createdFromServiceId: normalizeObjectIdString(activity?.ownership?.createdFromServiceId) || null,
+    };
+
+    const updated = await Activity.findByIdAndUpdate(
+      activityId,
+      { ownership: nextOwnership },
+      { new: true, runValidators: true }
+    ).lean();
+
+    const action = currentMode === 'global' ? 'assigned_by_admin' : 'reassigned_by_admin';
+    const message = currentMode === 'global'
+      ? 'Global activity assigned to business unit by admin.'
+      : 'Activity ownership reassigned to business unit by admin.';
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        action,
+        activityId: String(updated?._id || activityId),
+        activityName: getActivityDisplayName(updated || activity),
+        sourceActivityId: String(activity._id),
+        sourceActivityName: sourceName,
+        message,
+      },
+    });
+  } catch (error) {
+    console.error('Error acquiring activity ownership:', error);
+    const status = Number(error?.status) || 500;
+    const message = String(error?.message || '').trim() || 'Failed to acquire activity ownership';
+    return res.status(status).json({ success: false, message });
+  }
+};
+
+exports.upsertNamesSlugsFromWikidata = async (req, res) => {
+  try {
+    const activityId = normalizeObjectIdString(req?.params?.id);
+    if (!activityId) {
+      return res.status(400).json({ success: false, message: 'Invalid activity id' });
+    }
+
+    const current = await Activity.findById(activityId)
+      .select('_id name slug names slugs externalRef ownership')
+      .lean();
+    if (!current?._id) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    const writeAccess = await resolveActivityWriteAccess(current, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
+
+    const bodyQid = normalizeQid(req?.body?.qid);
+    const externalQid = normalizeQid(current?.externalRef?.id);
+    const qid = bodyQid || externalQid;
+    if (!qid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wikidata QID is required (body.qid or externalRef.id with QID format).',
+      });
+    }
+
+    const entityMap = await wikidataGetEntitiesRaw([qid], {
+      languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar'],
+    });
+    const entity = entityMap?.[qid];
+    if (!entity || entity.missing) {
+      return res.status(404).json({
+        success: false,
+        message: `No Wikidata entity found for ${qid}`,
+      });
+    }
+
+    const fetchedNames = extractLocalizedLabelsFromWikidataEntity(entity);
+    const existingNames = sanitizeLocaleMap(current?.names, { slug: false });
+    const existingSlugs = sanitizeLocaleMap(current?.slugs, { slug: true });
+
+    const names = { ...existingNames };
+    let namesAdded = 0;
+    for (const [locale, value] of Object.entries(fetchedNames)) {
+      if (names[locale]) continue;
+      names[locale] = value;
+      namesAdded += 1;
+    }
+    if (!names.en && String(current?.name || '').trim()) {
+      names.en = String(current.name).trim();
+    }
+
+    const slugs = { ...existingSlugs };
+    let slugsAdded = 0;
+    for (const [locale, value] of Object.entries(names)) {
+      if (slugs[locale]) continue;
+      const nextSlug = slugify(value || '');
+      if (!nextSlug) continue;
+      slugs[locale] = nextSlug;
+      slugsAdded += 1;
+    }
+    if (!slugs.en && String(current?.slug || '').trim()) {
+      const fallbackSlug = slugify(current.slug);
+      if (fallbackSlug) {
+        slugs.en = fallbackSlug;
+        slugsAdded += 1;
+      }
+    }
+
+    const updated = await Activity.findByIdAndUpdate(
+      activityId,
+      { $set: { names, slugs } },
+      { new: true, runValidators: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: updated,
+      meta: {
+        qid,
+        namesAdded,
+        slugsAdded,
+      },
+    });
+  } catch (error) {
+    console.error('Error upserting activity localized names/slugs from Wikidata:', error);
+    const message = String(error?.message || '').trim() || 'Failed to upsert names/slugs from Wikidata';
+    return res.status(500).json({ success: false, message, error });
   }
 };
 
@@ -1860,6 +2644,12 @@ exports.update = async (req, res) => {
 exports.deactivate = async (req, res) => {
   try {
     const { id } = req.params;
+    const current = await Activity.findById(id).select('_id ownership').lean();
+    if (!current) return res.status(404).json({ success: false, message: 'Activity not found' });
+    const writeAccess = await resolveActivityWriteAccess(current, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
     const updated = await Activity.findByIdAndUpdate(id, { active: false }, { new: true });
     if (!updated) return res.status(404).json({ success: false, message: 'Activity not found' });
     return res.status(200).json({ success: true, data: updated });
@@ -1873,6 +2663,12 @@ exports.deactivate = async (req, res) => {
 exports.restore = async (req, res) => {
   try {
     const { id } = req.params;
+    const current = await Activity.findById(id).select('_id ownership').lean();
+    if (!current) return res.status(404).json({ success: false, message: 'Activity not found' });
+    const writeAccess = await resolveActivityWriteAccess(current, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
     const updated = await Activity.findByIdAndUpdate(id, { active: true }, { new: true });
     if (!updated) return res.status(404).json({ success: false, message: 'Activity not found' });
     return res.status(200).json({ success: true, data: updated });
@@ -1886,6 +2682,12 @@ exports.restore = async (req, res) => {
 exports.remove = async (req, res) => {
   try {
     const { id } = req.params;
+    const current = await Activity.findById(id).select('_id ownership').lean();
+    if (!current) return res.status(404).json({ success: false, message: 'Activity not found' });
+    const writeAccess = await resolveActivityWriteAccess(current, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
     const deleted = await Activity.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ success: false, message: 'Activity not found' });
     return res.status(200).json({ success: true, message: 'Activity deleted permanently' });

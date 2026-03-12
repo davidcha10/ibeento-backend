@@ -4,7 +4,7 @@ const BusinessCategorySchema = new Schema(
   {
     businessType: { 
         type: String, 
-        enum: ['accommodation', 'experience', 'transport', 'food_drinks', 'practical'], 
+        enum: ['accommodation', 'experience', 'transport', 'food_drinks', 'practical_services'], 
         required: true, 
         index: true 
     },
@@ -18,6 +18,9 @@ const BusinessCategorySchema = new Schema(
     color: { type: String, default: null, trim: true },
 
     order: { type: Number, default: 0 },
+
+    // When true, providers can add multiple services from Wizard Step 5.
+    multiservice: { type: Boolean, default: true },
     
     isActive: { type: Boolean, default: true }
   },

@@ -1,11 +1,86 @@
 // models/Activity.js
 const { Schema, model, Types } = require('mongoose');
 
+function slugify(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function toPlainLocaleMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  if (raw instanceof Map) return Object.fromEntries(raw.entries());
+  return { ...raw };
+}
+
+function sanitizeLocaleStringMap(raw = {}, { slug = false } = {}) {
+  const input = toPlainLocaleMap(raw);
+  const out = {};
+  for (const [localeRaw, valueRaw] of Object.entries(input)) {
+    const locale = String(localeRaw || '').trim();
+    if (!locale) continue;
+    const value = slug ? slugify(valueRaw || '') : String(valueRaw || '').trim();
+    if (!value) continue;
+    out[locale] = value;
+  }
+  return out;
+}
+
+function firstLocaleValue(mapObj = {}) {
+  for (const value of Object.values(mapObj || {})) {
+    const normalized = String(value || '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function normalizeLocalizedNames(rawNames = {}, fallbackName = '') {
+  const names = sanitizeLocaleStringMap(rawNames, { slug: false });
+  const safeFallback = String(fallbackName || '').trim();
+  if (!names.en && safeFallback) names.en = safeFallback;
+  return names;
+}
+
+function normalizeLocalizedSlugs(rawSlugs = {}, namesObj = {}, fallbackSlug = '') {
+  const slugs = sanitizeLocaleStringMap(rawSlugs, { slug: true });
+  for (const [locale, value] of Object.entries(namesObj || {})) {
+    const safeLocale = String(locale || '').trim();
+    if (!safeLocale || slugs[safeLocale]) continue;
+    const derived = slugify(value || '');
+    if (derived) slugs[safeLocale] = derived;
+  }
+  const safeFallback = slugify(fallbackSlug || '');
+  if (!slugs.en && safeFallback) slugs.en = safeFallback;
+  return slugs;
+}
+
 const activitySchema = new Schema({
 
     name: { type: String, required: true, trim: true },
+    names: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     slug: { type: String, required: true, unique: true, trim: true },
+    slugs: {
+      type: Map,
+      of: String,
+      default: {},
+    },
     description: { type: String, trim: true },
+    type: {
+      type: String,
+      enum: ['accommodation', 'experience', 'food_drinks', 'transport', 'practical_services', 'place'],
+      default: 'experience',
+      index: true,
+    },
     activityCategoryIds: [{ type: Types.ObjectId, ref: 'ActivityCategory' }],
     tags: [{ type: Types.ObjectId, ref: 'ServiceTag' }],
     defaultDurationMin: {
@@ -146,23 +221,65 @@ const activitySchema = new Schema({
       notes: { type: String, trim: true },
     },
 
-    // Optional external reference for provider-backed entities (e.g. Wikidata QID).
-    // Manual activities can omit this entirely.
+    // External reference is mandatory for all activities.
     externalRef: {
       provider: {
         type: String,
         enum: ['wikidata', 'google', 'manual'],
         trim: true,
+        required: true,
       },
       id: { type: String, trim: true },
       url: { type: String, trim: true },
     },
 
+    ownership: {
+      mode: {
+        type: String,
+        enum: ['global', 'business_unit'],
+        default: 'global',
+        index: true,
+      },
+      businessUnitId: { type: Types.ObjectId, ref: 'BusinessUnit', default: null, index: true },
+      createdFromServiceId: { type: Types.ObjectId, ref: 'Service', default: null },
+    },
+
+    orphanCleanup: {
+      pendingDeletion: { type: Boolean, default: false, index: true },
+      deleteAfterAt: { type: Date, default: null, index: true },
+      sourceServiceId: { type: Types.ObjectId, ref: 'Service', default: null },
+      replacementActivityId: { type: Types.ObjectId, ref: 'Activity', default: null },
+      replacementActivityName: { type: String, trim: true, default: null },
+      lastNotifiedAt: { type: Date, default: null },
+      reason: { type: String, trim: true, default: null },
+    },
+
 }, { timestamps: true });
 
 activitySchema.pre('validate', function (next) {
+  const namesSeed = sanitizeLocaleStringMap(this.names, { slug: false });
+  const slugsSeed = sanitizeLocaleStringMap(this.slugs, { slug: true });
+
+  const currentName = String(this.name || '').trim();
+  const derivedName = currentName || String(namesSeed.en || firstLocaleValue(namesSeed) || '').trim();
+  if (derivedName) this.name = derivedName;
+
+  const normalizedNames = normalizeLocalizedNames(namesSeed, derivedName);
+  this.names = normalizedNames;
+
+  const currentSlug = slugify(this.slug || '');
+  const derivedSlug =
+    currentSlug ||
+    String(slugsSeed.en || firstLocaleValue(slugsSeed) || '').trim() ||
+    slugify(derivedName);
+  if (derivedSlug) this.slug = derivedSlug;
+
+  const normalizedSlugs = normalizeLocalizedSlugs(slugsSeed, normalizedNames, derivedSlug);
+  this.slugs = normalizedSlugs;
+
   const coords = this?.location?.geo?.coordinates;
   const type = this?.location?.geo?.type;
+
   const valid =
     type === 'Point' &&
     Array.isArray(coords) &&
@@ -175,6 +292,60 @@ activitySchema.pre('validate', function (next) {
   }
   return next();
 });
+
+activitySchema.pre('findOneAndUpdate', function normalizeUpdate(next) {
+  const update = this.getUpdate() || {};
+  const hasOperators = Object.keys(update).some((key) => key.startsWith('$'));
+  const target = hasOperators ? { ...(update.$set || {}) } : { ...update };
+
+  if (Object.prototype.hasOwnProperty.call(target, 'name')) {
+    target.name = String(target.name || '').trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(target, 'slug')) {
+    target.slug = slugify(target.slug || target.name || '');
+  }
+
+  const hasNames = Object.prototype.hasOwnProperty.call(target, 'names');
+  const hasSlugs = Object.prototype.hasOwnProperty.call(target, 'slugs');
+
+  let normalizedNames = null;
+  if (hasNames) {
+    normalizedNames = normalizeLocalizedNames(target.names, target.name || '');
+    target.names = normalizedNames;
+  }
+
+  if (hasSlugs) {
+    target.slugs = normalizeLocalizedSlugs(target.slugs, normalizedNames || {}, target.slug || '');
+  } else if (hasNames) {
+    target.slugs = normalizeLocalizedSlugs({}, normalizedNames || {}, target.slug || '');
+  }
+
+  if (hasOperators) {
+    this.setUpdate({
+      ...update,
+      $set: target,
+    });
+  } else {
+    this.setUpdate(target);
+  }
+
+  next();
+});
+
+activitySchema.methods.getDisplayName = function getDisplayName(locale) {
+  if (this.names && this.names.get && this.names.get(locale)) {
+    return this.names.get(locale);
+  }
+  return this.name;
+};
+
+activitySchema.methods.getDisplaySlug = function getDisplaySlug(locale) {
+  if (this.slugs && this.slugs.get && this.slugs.get(locale)) {
+    return this.slugs.get(locale);
+  }
+  return this.slug;
+};
 
 activitySchema.index({ 'location.primaryZoneId': 1, 'ranking.priority': 1 });
 activitySchema.index({ 'location.zonePathIds': 1, 'ranking.priority': 1 });
@@ -194,5 +365,7 @@ activitySchema.index(
     },
   }
 );
+activitySchema.index({ 'ownership.mode': 1, 'ownership.businessUnitId': 1, active: 1 });
+activitySchema.index({ 'orphanCleanup.pendingDeletion': 1, 'orphanCleanup.deleteAfterAt': 1 });
 
 module.exports = model('Activity', activitySchema);

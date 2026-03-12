@@ -3,6 +3,7 @@ const { Schema } = require('mongoose');
 
 const BaseFields = {
 
+  providerId: { type: Schema.Types.ObjectId, ref: 'ProviderProfile', required: true },
   BusinessUnitId: { type: Schema.Types.ObjectId, ref: 'BusinessUnit' },
   serviceName: { type: String, required: true, trim: true },
   serviceCategoryId: { type: Schema.Types.ObjectId, ref: 'ServiceCategory' },
@@ -15,8 +16,8 @@ const BaseFields = {
   securityComplianceIds: [{ type: Schema.Types.ObjectId, ref: 'SecurityComplianceItem' }],
   requirementsIds: [{ type: Schema.Types.ObjectId, ref: 'ServiceRequirementItem' }],
   rulesIds: [{ type: Schema.Types.ObjectId, ref: 'ServiceRule' }],
+  privacyIds: [{ type: Schema.Types.ObjectId, ref: 'PrivacyItem' }],
   cancellationPolicyId: { type: Schema.Types.ObjectId, ref: 'CancellationPolicy' },
-  waitTime: { type: Number, min: 0 },
 
 
 
@@ -34,15 +35,12 @@ const BaseFields = {
 
 
 
-  providerId: { type: Schema.Types.ObjectId, ref: 'Provider', required: true },
+
   activityId: { type: Schema.Types.ObjectId, ref: 'Activity' },
 
-  title:       { type: String, required: true, trim: true },
-
   location: {
-    countryId: { type: Schema.Types.ObjectId, ref: 'Country' },
-    regionId:  { type: Schema.Types.ObjectId, ref: 'Region'  },
-    cityId:    { type: Schema.Types.ObjectId, ref: 'City'    },
+    primaryZoneId: { type: Schema.Types.ObjectId, ref: 'Zone' },
+    zonePathIds: [{ type: Schema.Types.ObjectId, ref: 'Zone' }],
     timeZone:  { type: String, trim: true },
     address:   { type: String, trim: true },
     geo: {
@@ -65,8 +63,10 @@ const BaseFields = {
   pricing: {
     basePrice: { type: Number },
     currency:  { type: String, trim: true },
-    per:       { type: String, enum: ['person','group'], default: 'person' }
+    per:       { type: String, enum: ['person','group','night'], default: 'person' }
   },
+
+  availabilityWindow: { type: String, trim: true },
 
   timeWindow: {
     start: { type: String, trim: true, match: /^([01]\d|2[0-3]):[0-5]\d$/ },

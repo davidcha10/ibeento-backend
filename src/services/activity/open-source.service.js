@@ -10,6 +10,97 @@ function buildHeaders() {
   return { 'User-Agent': 'TripPlanner/1.0 (open-data-preview)' };
 }
 
+const OPEN_DATA_FETCH_TIMEOUT_MS = Math.max(
+  5000,
+  Number(process.env.OPEN_DATA_FETCH_TIMEOUT_MS || 45000)
+);
+const OPEN_DATA_FETCH_RETRIES = Math.max(
+  0,
+  Number(process.env.OPEN_DATA_FETCH_RETRIES || 2)
+);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractFetchErrorCode(err) {
+  return (
+    err?.cause?.code ||
+    err?.code ||
+    err?.cause?.name ||
+    null
+  );
+}
+
+function isRetryableFetchFailure(err) {
+  const code = String(extractFetchErrorCode(err) || '');
+  if (code) {
+    const transientCodes = new Set([
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'ENOTFOUND',
+      'UND_ERR_CONNECT_TIMEOUT',
+      'UND_ERR_HEADERS_TIMEOUT',
+      'UND_ERR_SOCKET',
+      'UND_ERR_ABORTED',
+      'ABORT_ERR',
+      'TimeoutError',
+    ]);
+    if (transientCodes.has(code)) return true;
+  }
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('fetch failed') || msg.includes('network');
+}
+
+async function fetchWithRetry(url, options = {}, retryOptions = {}) {
+  const retries = Number.isFinite(Number(retryOptions?.retries))
+    ? Math.max(0, Number(retryOptions.retries))
+    : OPEN_DATA_FETCH_RETRIES;
+  const timeoutMs = Number.isFinite(Number(retryOptions?.timeoutMs))
+    ? Math.max(1000, Number(retryOptions.timeoutMs))
+    : OPEN_DATA_FETCH_TIMEOUT_MS;
+  const retryStatusSet = new Set(
+    Array.isArray(retryOptions?.retryStatuses)
+      ? retryOptions.retryStatuses.map((s) => Number(s))
+      : [429, 500, 502, 503, 504]
+  );
+  let attempt = 0;
+  let waitMs = 1200;
+  let lastErr = null;
+
+  while (attempt <= retries) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (retryStatusSet.has(Number(res.status)) && attempt < retries) {
+        await sleep(waitMs);
+        waitMs = Math.min(8000, Math.round(waitMs * 1.5));
+        attempt += 1;
+        continue;
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timeout);
+      lastErr = err;
+      if (attempt >= retries || !isRetryableFetchFailure(err)) {
+        throw err;
+      }
+      await sleep(waitMs);
+      waitMs = Math.min(8000, Math.round(waitMs * 1.5));
+      attempt += 1;
+    }
+  }
+
+  throw lastErr || new Error('fetch failed');
+}
+
 function normalizeLocationSource(source, fallback = 'manual') {
   const s = String(source || '').trim().toLowerCase();
   if (!s) return fallback;
@@ -126,7 +217,7 @@ async function fetchCommonsCategoryFileNames(categoryName, limit = 30) {
   url.searchParams.set('cmtype', 'file');
   url.searchParams.set('cmlimit', String(Math.max(10, Math.min(limit, 50))));
 
-  const res = await fetch(url.toString(), { headers: buildHeaders() });
+  const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
   if (!res.ok) return [];
 
   const json = await res.json();
@@ -152,7 +243,7 @@ async function fetchCommonsSearchFileNames(query, limit = 30) {
   url.searchParams.set('srnamespace', '6'); // File namespace
   url.searchParams.set('srlimit', String(Math.max(10, Math.min(limit, 50))));
 
-  const res = await fetch(url.toString(), { headers: buildHeaders() });
+  const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
   if (!res.ok) return [];
 
   const json = await res.json();
@@ -604,7 +695,7 @@ async function searchPoiWithNominatim(query, limit = 5) {
     url.searchParams.set('namedetails', '1');
     url.searchParams.set('accept-language', 'en');
 
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithRetry(url.toString(), {
       headers: {
         ...buildHeaders(),
         Accept: 'application/json',
@@ -663,7 +754,7 @@ async function reverseWithNominatim(lat, lng) {
     url.searchParams.set('namedetails', '1');
     url.searchParams.set('accept-language', 'en');
 
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithRetry(url.toString(), {
       headers: {
         ...buildHeaders(),
         Accept: 'application/json',
@@ -775,17 +866,21 @@ async function wikidataSearchEntities(query, limit = 20) {
   url.searchParams.set('search', query);
   url.searchParams.set('limit', String(limit));
 
-  const res = await fetch(url.toString(), { headers: buildHeaders() });
+  const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
   if (!res.ok) return [];
   const json = await res.json();
   return Array.isArray(json?.search) ? json.search : [];
 }
 
-async function wikidataGetEntitiesRaw(ids = []) {
+async function wikidataGetEntitiesRaw(ids = [], options = {}) {
   const clean = Array.from(new Set(ids.filter(Boolean)));
   if (!clean.length) return {};
   const out = {};
   const chunkSize = 40;
+  const requestedLanguages = Array.isArray(options?.languages)
+    ? options.languages.map((value) => String(value || '').trim()).filter(Boolean).join('|')
+    : String(options?.languages || '').trim();
+  const languages = requestedLanguages || 'en';
 
   for (let i = 0; i < clean.length; i += chunkSize) {
     const chunk = clean.slice(i, i + chunkSize);
@@ -793,11 +888,11 @@ async function wikidataGetEntitiesRaw(ids = []) {
     url.searchParams.set('action', 'wbgetentities');
     url.searchParams.set('format', 'json');
     url.searchParams.set('origin', '*');
-    url.searchParams.set('languages', 'en');
+    url.searchParams.set('languages', languages);
     url.searchParams.set('props', 'labels|descriptions|claims|sitelinks');
     url.searchParams.set('ids', chunk.join('|'));
 
-    const res = await fetch(url.toString(), { headers: buildHeaders() });
+    const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
     if (!res.ok) continue;
     const json = await res.json();
     const entities = json?.entities || {};
@@ -865,7 +960,7 @@ LIMIT ${safeLimit}
 OFFSET ${Math.max(0, Math.floor(safeOffset))}
 `.trim();
 
-  const res = await fetch('https://query.wikidata.org/sparql', {
+  const res = await fetchWithRetry('https://query.wikidata.org/sparql', {
     method: 'POST',
     headers: {
       ...buildHeaders(),
@@ -912,7 +1007,7 @@ SELECT DISTINCT ?item WHERE {
 }
 `.trim();
 
-    const res = await fetch('https://query.wikidata.org/sparql', {
+    const res = await fetchWithRetry('https://query.wikidata.org/sparql', {
       method: 'POST',
       headers: {
         ...buildHeaders(),

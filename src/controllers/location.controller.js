@@ -1939,12 +1939,6 @@ function titleCase(input) {
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
-function compactObject(obj = {}) {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, value]) => value !== null && value !== undefined && value !== '')
-  );
-}
-
 async function ensureManualZone({
   name,
   canonicalType,
@@ -1974,10 +1968,10 @@ async function ensureManualZone({
     doc = await Zone.findOne({ source, externalId }).exec();
   }
 
-  if (!doc && canonicalType === 'country' && iso2) {
+  if (!doc && canonicalType === 'country') {
     doc = await Zone.findOne({
       'taxonomySnapshot.canonicalType': 'country',
-      $or: [{ 'meta.iso2': String(iso2).toUpperCase() }, { name: finalName }]
+      name: finalName
     }).exec();
   }
 
@@ -2025,10 +2019,6 @@ async function ensureManualZone({
       level,
       source,
       externalId: externalId || null,
-      meta: compactObject({
-        iso2: iso2 ? String(iso2).toUpperCase() : null,
-        iso3: iso3 ? String(iso3).toUpperCase() : null,
-      }),
     });
   } else {
     let changed = false;

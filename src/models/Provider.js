@@ -54,4 +54,4 @@ const ProviderProfileSchema = new Schema({
 ProviderProfileSchema.index({ 'baseLocation.geo': '2dsphere' });
 ProviderProfileSchema.index({ status: 1, 'baseLocation.countryId': 1 });
 
-module.exports = mongoose.model('ProviderProfile', ProviderProfileSchema);
+module.exports = mongoose.model('ProviderProfile', ProviderProfileSchema, 'providers');

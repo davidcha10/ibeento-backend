@@ -44,7 +44,7 @@ const itineraryItemSchema = new Schema(
 
     booking: {
       serviceSnapshot: {
-        providerId: { type: Schema.Types.ObjectId, ref: 'Provider' },
+        providerId: { type: Schema.Types.ObjectId, ref: 'ProviderProfile' },
         serviceType: { type: String, trim: true },
         title: { type: String, trim: true },
         pricing: {
@@ -88,6 +88,83 @@ const itineraryItemSchema = new Schema(
         startDate: { type: Date },
         endDate: { type: Date },
         timeZone: { type: String, trim: true }
+      },
+      guestCheckIn: {
+        guests: [
+          {
+            firstName: { type: String, trim: true },
+            secondName: { type: String, trim: true },
+            firstLastName: { type: String, trim: true },
+            secondLastName: { type: String, trim: true },
+            dateOfBirth: { type: Date },
+            IdType: { type: String, trim: true },
+            Id: { type: String, trim: true },
+            nationality: { type: String, trim: true },
+            role: { type: String, enum: ['Main guest', 'Guest'] },
+            invoiceInformation: {
+              email: { type: String, trim: true, lowercase: true },
+              cellphone: { type: String, trim: true },
+              address: { type: String, trim: true },
+            },
+            visitors: [
+              {
+                name: { type: String, trim: true },
+                document: { type: String, trim: true },
+              },
+            ],
+            regulation: {
+              residence: {
+                value: { type: String, trim: true },
+                countryCode: { type: String, trim: true },
+                countryName: { type: String, trim: true },
+                cityCode: { type: String, trim: true },
+                cityName: { type: String, trim: true },
+              },
+              origin: {
+                value: { type: String, trim: true },
+                countryCode: { type: String, trim: true },
+                countryName: { type: String, trim: true },
+                cityCode: { type: String, trim: true },
+                cityName: { type: String, trim: true },
+              },
+              destination: {
+                value: { type: String, trim: true },
+                countryCode: { type: String, trim: true },
+                countryName: { type: String, trim: true },
+                cityCode: { type: String, trim: true },
+                cityName: { type: String, trim: true },
+              },
+            },
+          }
+        ],
+        visitors: [
+          {
+            name: { type: String, trim: true },
+            document: { type: String, trim: true },
+            role: { type: String, enum: ['Visitor'], default: 'Visitor' },
+            ownerRole: { type: String, enum: ['Main guest', 'Guest'] },
+            ownerIndex: { type: Number, min: 0, default: 0 },
+          },
+        ],
+        dataTreatmentConsent: {
+          accepted: { type: Boolean, default: false },
+          acceptedAt: { type: Date },
+          policyUrl: { type: String, trim: true },
+          policyText: { type: String, trim: true },
+        },
+        apartmentRulesConsent: {
+          accepted: { type: Boolean, default: false },
+          acceptedAt: { type: Date },
+          policyUrl: { type: String, trim: true },
+          policyText: { type: String, trim: true },
+        },
+        submittedBy: {
+          userId: { type: Schema.Types.ObjectId, ref: 'User' },
+          email: { type: String, trim: true, lowercase: true },
+          name: { type: String, trim: true },
+        },
+        signature: { type: Schema.Types.Mixed, default: null },
+        completedAt: { type: Date }
       },
       reservedAt: { type: Date },
       confirmedAt: { type: Date },

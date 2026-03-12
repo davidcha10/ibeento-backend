@@ -4,6 +4,9 @@ const authAdmin = require('../middlewares/authAdmin');
 const adminAnalyticsController = require('../controllers/admin-analytics.controller');
 const adminTaxonomyController = require('../controllers/admin-taxonomy.controller');
 const adminZonesController = require('../controllers/admin-zones.controller');
+const adminActivitySyncController = require('../controllers/admin-activity-sync.controller');
+const adminZoneSyncController = require('../controllers/admin-zone-sync.controller');
+const adminCompliancePacksController = require('../controllers/admin-compliance-packs.controller');
 
 const router = Router();
 
@@ -22,5 +25,23 @@ router.put('/taxonomy/zone-types/:qid', adminTaxonomyController.updateByQid);
 router.delete('/taxonomy/zone-types/:qid', adminTaxonomyController.deleteByQid);
 
 router.post('/zones/:id/update-taxonomy-snapshot', adminZonesController.updateTaxonomySnapshotByZoneId);
+
+router.get('/activity-sync/status', adminActivitySyncController.status);
+router.get('/activity-sync/activities/compare', adminActivitySyncController.compareActivities);
+router.post('/activity-sync/activities/missing-keys-by-zone', adminActivitySyncController.listMissingKeysByZone);
+router.post('/activity-sync/activities/push-local-to-prod', adminActivitySyncController.pushLocalToProd);
+router.post('/activity-sync/activities/push-prod-to-local', adminActivitySyncController.pushProdToLocal);
+
+router.get('/zone-sync/status', adminZoneSyncController.status);
+router.get('/zone-sync/zones/compare', adminZoneSyncController.compareZones);
+router.get('/zone-sync/zones/sync-chain', adminZoneSyncController.syncChain);
+router.post('/zone-sync/zones/push-local-to-prod', adminZoneSyncController.pushLocalToProd);
+router.post('/zone-sync/zones/push-prod-to-local', adminZoneSyncController.pushProdToLocal);
+
+router.get('/compliance-packs', adminCompliancePacksController.list);
+router.get('/compliance-packs/:id', adminCompliancePacksController.getById);
+router.post('/compliance-packs', adminCompliancePacksController.create);
+router.put('/compliance-packs/:id', adminCompliancePacksController.updateById);
+router.delete('/compliance-packs/:id', adminCompliancePacksController.deleteById);
 
 module.exports = router;

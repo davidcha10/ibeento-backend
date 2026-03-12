@@ -10,6 +10,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "db:sync-indexes": "node scripts/sync-indexes.js",
+    "compliance:seed:sire": "node scripts/seed-compliance-pack-sire.js",
+    "discover:qid": "node scripts/run-discover-from-qid.js",
     "zones:backfill:typecodes": "node scripts/backfill-zone-typecodes.js",
     "zones:seed:taxonomy": "node scripts/seed-zone-type-taxonomy.js"
   },

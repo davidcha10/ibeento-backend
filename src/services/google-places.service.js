@@ -32,6 +32,47 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
+async function reverseGeocodeAddress(lat, lng, options = {}) {
+  try {
+    const language = String(options.languageCode || 'en').trim() || 'en';
+    const response = await axios.get(GEOCODE_URL, {
+      params: {
+        latlng: `${lat},${lng}`,
+        key: process.env.GOOGLE_PLACES_API_KEY,
+        language,
+      }
+    });
+
+    const results = Array.isArray(response?.data?.results) ? response.data.results : [];
+    if (!results.length) {
+      return {
+        placeId: '',
+        address: '',
+        lat: Number(lat),
+        lng: Number(lng),
+      };
+    }
+
+    const first = results[0] || {};
+    const geometryLat = Number(first?.geometry?.location?.lat);
+    const geometryLng = Number(first?.geometry?.location?.lng);
+    return {
+      placeId: String(first?.place_id || '').trim(),
+      address: String(first?.formatted_address || '').trim(),
+      lat: Number.isFinite(geometryLat) ? geometryLat : Number(lat),
+      lng: Number.isFinite(geometryLng) ? geometryLng : Number(lng),
+    };
+  } catch (err) {
+    console.error('[GooglePlacesService] reverseGeocodeAddress error:', err.response?.data || err);
+    return {
+      placeId: '',
+      address: '',
+      lat: Number(lat),
+      lng: Number(lng),
+    };
+  }
+}
+
 function parseGeocodeComponents(components) {
   let city = null;
   let region = null;
@@ -151,6 +192,7 @@ async function autocompleteLocations(input, options = {}) {
     languageCode = 'en',
     locationBias,
     includedRegionCodes,
+    mode = 'location',
   } = options;
 
   if (!input || !input.trim()) {
@@ -195,6 +237,8 @@ async function autocompleteLocations(input, options = {}) {
       .map((s) => s.placePrediction)
       .filter((p) => !!p);
 
+    const normalizedMode = String(mode || 'location').trim().toLowerCase();
+
     // Filtrar solo predicciones que aparentan ser locaciones (ciudades, regiones, países)
     const locationTypes = new Set([
       'locality',
@@ -204,10 +248,42 @@ async function autocompleteLocations(input, options = {}) {
       'country',
       'political',
     ]);
+    const addressTypes = new Set([
+      'street_address',
+      'route',
+      'premise',
+      'subpremise',
+      'intersection',
+      'postal_code',
+      'plus_code',
+      'establishment',
+      'point_of_interest',
+      'geocode',
+    ]);
 
-    const filteredPredictions = placePredictions.filter((pred) =>
-      (pred.types || []).some((t) => locationTypes.has(t))
-    );
+    let filteredPredictions = placePredictions;
+    if (normalizedMode === 'location') {
+      filteredPredictions = placePredictions.filter((pred) =>
+        (pred.types || []).some((t) => locationTypes.has(t))
+      );
+    } else if (normalizedMode === 'address') {
+      filteredPredictions = placePredictions
+        .filter((pred) => {
+          const types = Array.isArray(pred?.types) ? pred.types : [];
+          const hasAddressType = types.some((t) => addressTypes.has(String(t || '').toLowerCase()));
+          const hasAnyType = types.length > 0;
+          // Some valid address-like predictions may come only as generic geocode text.
+          return hasAddressType || !hasAnyType || /\d/.test(String(pred?.text?.text || ''));
+        })
+        .sort((a, b) => {
+          const aTypes = Array.isArray(a?.types) ? a.types : [];
+          const bTypes = Array.isArray(b?.types) ? b.types : [];
+          const aIsLocation = aTypes.some((t) => locationTypes.has(String(t || '').toLowerCase()));
+          const bIsLocation = bTypes.some((t) => locationTypes.has(String(t || '').toLowerCase()));
+          if (aIsLocation === bIsLocation) return 0;
+          return aIsLocation ? 1 : -1;
+        });
+    }
 
     return filteredPredictions.map((pred) => ({
       placeId: pred.placeId,
@@ -502,6 +578,37 @@ async function getPlaceDetails(placeId, options = {}) {
   }
 }
 
+async function getPlaceLookup(placeId, options = {}) {
+  try {
+    const languageCode = String(options.languageCode || 'en').trim() || 'en';
+    const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?languageCode=${encodeURIComponent(languageCode)}`;
+    const response = await axios.get(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+        'X-Goog-FieldMask': 'id,formattedAddress,location'
+      }
+    });
+    const payload = response?.data || {};
+    const lat = Number(payload?.location?.latitude);
+    const lng = Number(payload?.location?.longitude);
+    return {
+      placeId: String(payload?.id || placeId || '').trim(),
+      address: String(payload?.formattedAddress || '').trim(),
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+    };
+  } catch (err) {
+    console.error('[GooglePlacesService] getPlaceLookup error:', err.response?.data || err);
+    return {
+      placeId: String(placeId || '').trim(),
+      address: '',
+      lat: null,
+      lng: null,
+    };
+  }
+}
+
 // Helper: searchLocationCanonic - canonical location name extractor
 async function searchLocationCanonicLongText(query, type) {
   try {
@@ -647,7 +754,9 @@ module.exports = {
   resolveLocationByNearbySearch,
   fallbackResolveLocation,
   getPlaceDetails,
+  getPlaceLookup,
   parseAddressComponents,
   reverseGeocode,
+  reverseGeocodeAddress,
   parseGeocodeComponents
 };

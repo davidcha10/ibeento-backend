@@ -24,7 +24,8 @@ ServiceBaseSchema.virtual('durationMinutes').get(function () {
 
 /** Índices base (comparten todas las variantes) */
 ServiceBaseSchema.index({ isActive: 1 });
-ServiceBaseSchema.index({ 'location.cityId': 1, isActive: 1 });
+ServiceBaseSchema.index({ 'location.primaryZoneId': 1, isActive: 1 });
+ServiceBaseSchema.index({ 'location.zonePathIds': 1, isActive: 1 });
 ServiceBaseSchema.index({ providerId: 1 });
 ServiceBaseSchema.index({ activityId: 1, isActive: 1 });
 ServiceBaseSchema.index(
@@ -55,9 +56,7 @@ const Service = model('Service', ServiceBaseSchema);
 const AccommodationSpecific = {
   accommodation: {
     unitType:   { type: String, enum: ['hotel_room','house','apartment'], default: 'hotel_room' },
-    capacity:   { type: Number },
     totalUnits: { type: Number, default: 1 },
-    amenities:  [{ type: String, trim: true }],
     maxGuests: { type: Number, min: 0 },
     roomsNumber: { type: Number, min: 0 },
     rooms: [{
@@ -73,7 +72,16 @@ const AccommodationSpecific = {
     noticePeriod: { type: String, trim: true },
     availabilityWindow: { type: String, trim: true },
     amenitiesIds: [{ type: Schema.Types.ObjectId, ref: 'Amenity' }],
-    privacyIds: [{ type: Schema.Types.ObjectId, ref: 'PrivacyItem' }]
+    wifiNetwork: { type: String, trim: true },
+    wifiPassword: { type: String, trim: true },
+    welcomeMessage: { type: String, trim: true },
+    entryMethod: {
+      type: String,
+      enum: ['code', 'key', 'lockbox', 'reception', 'smart_lock', 'other'],
+      default: 'other',
+    },
+    entryDetails: { type: String, trim: true },
+    luggageStorage: { type: Boolean, default: false }
   }
 };
 
@@ -83,6 +91,7 @@ const ServiceAccommodation = Service.discriminator('ServiceAccommodation', Servi
 
 // ---------------- Transport discriminator ----------------
 const TransportSpecific = {
+  waitTime: { type: Number, min: 0 },
   transport: {
     vehicleType: { type: String, trim: true },
     capacity:    { type: Number },
@@ -112,11 +121,14 @@ const ServiceTransport = Service.discriminator('ServiceTransport', ServiceTransp
 
 // ---------------- Experience discriminator ----------------
 const ExperienceSpecific = {
+  waitTime: { type: Number, min: 0 },
   experience: {
     durationHours:   { type: Number },
     groupSize:       { type: Number },
     minParticipants: { type: Number },
     languages:       [{ type: String, trim: true }],
+    amenitiesIds:    [{ type: Schema.Types.ObjectId, ref: 'Amenity' }],
+    whatGuestsBring: { type: String, trim: true },
     schedule: [{
       kind:       { type: String, enum: ['daily','weekly','seasonal'], required: true },
       daysOfWeek: [{ type: String, enum: ['mon','tue','wed','thu','fri','sat','sun'] }],

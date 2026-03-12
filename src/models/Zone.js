@@ -82,7 +82,10 @@ const zoneSchema = new Schema(
 
     active: { type: Boolean, default: true },
     priority: { type: Number, default: 100 },
-    meta: { type: Schema.Types.Mixed, default: {} }
+
+    // Discover preview guard: when true, external discover search for this zone
+    // has already been executed at least once.
+    discoverPreviewSearched: { type: Boolean, default: false }
   },
   {
     timestamps: true,

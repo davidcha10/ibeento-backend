@@ -9,7 +9,7 @@ const AmenitySchema = new Schema(
     businessTypes: [
       {
         type: String,
-        enum: ['accommodation', 'experience', 'food_drinks', 'transport', 'practical'],
+        enum: ['accommodation', 'experience', 'food_drinks', 'transport', 'practical_services'],
         required: true,
       },
     ],

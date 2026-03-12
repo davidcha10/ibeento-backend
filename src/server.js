@@ -9,6 +9,8 @@ const rateLimit = require('express-rate-limit');
 const { connectDB } = require('./config/db');
 const routes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
+const { startSireDailyReportScheduler } = require('./services/sire-daily-report.service');
+const { startOrphanActivityCleanupScheduler } = require('./services/activity-orphan-cleanup.service');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -73,5 +75,7 @@ const PORT = process.env.PORT || 4000;
 
 (async () => {
   await connectDB(process.env.MONGODB_URI);
+  startSireDailyReportScheduler();
+  startOrphanActivityCleanupScheduler();
   app.listen(PORT, () => console.log(`🚀 API listening at http://localhost:${PORT}`));
 })();
