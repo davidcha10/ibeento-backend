@@ -11,5 +11,6 @@ router.post('/refresh', ctrl.refresh);
 router.post('/logout', ctrl.logout);
 router.get('/me', auth, ctrl.me);
 router.post('/google', rejectSensitiveBodyFields, ctrl.google);
+router.post('/apple', rejectSensitiveBodyFields, ctrl.apple);
 
 module.exports = router;

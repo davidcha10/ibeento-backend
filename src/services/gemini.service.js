@@ -268,6 +268,8 @@ Hard rules:
 - Use ONLY IDs from input (activities._id, itinerary.items._id).
 - Prefer concrete operations: add_activity, update_activity, remove_activity, reorder_activity.
 - Respect chronology; avoid overlap in the same day.
+- Never place an add_activity in a time slot that is already used by an update_activity or reorder_activity.
+- If you update/reorder an existing itinerary item for a slot, do not add another activity overlapping that same slot.
 - Use geo proximity when activities/itinerary items include geo (lng/lat); prefer nearby sequences.
 - Prioritize favorites.activityIds and favorites.topActivityCategoryIds (favorites > inertia).
 - Fill each trip day with 2-4 activities when candidates allow.
@@ -311,6 +313,7 @@ Constraints:
 5) Prioritize day coverage and schedule quality over narrative.
 6) You can modify duration by adjusting timelineEndDate (not fixed to defaultDurationMin).
 7) Before final output, self-check: every day has morning+afternoon coverage.
+8) Do not return conflicting actions for the same time slot (especially add vs update/reorder).
   `.trim();
 
   const modelsToTry = [DEFAULT_MODEL_ID, ...FALLBACK_MODEL_IDS];

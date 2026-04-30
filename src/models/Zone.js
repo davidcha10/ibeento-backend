@@ -81,6 +81,7 @@ const zoneSchema = new Schema(
     },
 
     active: { type: Boolean, default: true },
+    audited: { type: Boolean, default: false },
     priority: { type: Number, default: 100 },
 
     // Discover preview guard: when true, external discover search for this zone

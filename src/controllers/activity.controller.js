@@ -1,10 +1,14 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const Activity = require('../models/Activity');
 const BusinessUnit = require('../models/BusinessUnit');
 const Zone = require('../models/Zone');
 const ActivityCategory = require('../models/ActivityCategory');
+const DiscoverPreviewJob = require('../models/DiscoverPreviewJob');
+const SocialImportLink = require('../models/SocialImportLink');
 const { Service } = require('../models/Service');
 const { syncZoneHierarchyByQid } = require('./location.controller');
+const googlePlacesService = require('../services/google-places.service');
 
 
 const {
@@ -16,6 +20,14 @@ const {
   wikidataSearchSingleActivityByText,
   wikidataGetEntitiesRaw,
 } = require('../services/activity/open-source.service');
+const {
+  buildGoogleCachePayload,
+  calculatePriorityFromGoogleCache,
+  isGoogleCacheExpired,
+  activityHasCanonicalData,
+  refreshGoogleCacheByPlaceId,
+  validGeoPoint,
+} = require('../services/activity/google-cache-maintenance.service');
 
 function collectActivityCategoryIds(activity) {
   const ids = [];
@@ -390,18 +402,65 @@ async function normalizeActivityLocationFromZones(location = {}) {
   };
 }
 
-async function hasActiveLinkedService(activityId) {
-  if (!activityId) return false;
-  return !!(await Service.exists({
-    activityId: new mongoose.Types.ObjectId(String(activityId)),
-    isActive: { $ne: false },
-  }));
+const DISCOVER_PREVIEW_NO_LOCATIONS_LIMIT = 50;
+const DISCOVER_PREVIEW_WORKER_TICK_MS = Number(process.env.DISCOVER_PREVIEW_WORKER_TICK_MS || 2000);
+const DISCOVER_PREVIEW_WORKER_LOCK_MS = Number(process.env.DISCOVER_PREVIEW_WORKER_LOCK_MS || (2 * 60 * 1000));
+const DISCOVER_PREVIEW_WORKER_RETRY_BASE_MS = Number(process.env.DISCOVER_PREVIEW_WORKER_RETRY_BASE_MS || 30000);
+const DISCOVER_PREVIEW_WORKER_RETRY_MAX_MS = Number(process.env.DISCOVER_PREVIEW_WORKER_RETRY_MAX_MS || (15 * 60 * 1000));
+const DISCOVER_PREVIEW_WORKER_MAX_TOTAL_MS = Number(process.env.DISCOVER_PREVIEW_WORKER_MAX_TOTAL_MS || (60 * 60 * 1000));
+
+let discoverPreviewWorkerTimer = null;
+let discoverPreviewWorkerInFlight = false;
+
+function normalizeDiscoverJobLocationKey(loc = {}) {
+  const rawId =
+    loc?._id ||
+    loc?.id ||
+    loc?.zoneId ||
+    loc?.primaryZoneId ||
+    null;
+  const id = String(rawId || '').trim();
+  const type = String(loc?.type || '').trim().toLowerCase();
+  if (!id || !type) return null;
+  return { id, type };
 }
 
-const DISCOVER_PREVIEW_JOB_TTL_MS = 30 * 60 * 1000;
-const DISCOVER_PREVIEW_JOB_MAX_ITEMS = 120;
-const DISCOVER_PREVIEW_NO_LOCATIONS_LIMIT = 50;
-const discoverPreviewJobs = new Map();
+function buildDiscoverPreviewJobRequestKey(payload = {}) {
+  const minSitelinksRaw = Number(payload?.discoverControl?.minSitelinks);
+  const minSitelinks = Number.isFinite(minSitelinksRaw)
+    ? Math.max(0, Math.floor(minSitelinksRaw))
+    : 1;
+
+  const normalizedLocations = (Array.isArray(payload?.locations) ? payload.locations : [])
+    .map((loc) => normalizeDiscoverJobLocationKey(loc))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const idCmp = String(a.id).localeCompare(String(b.id));
+      if (idCmp !== 0) return idCmp;
+      return String(a.type).localeCompare(String(b.type));
+    });
+
+  return JSON.stringify({
+    minSitelinks,
+    locations: normalizedLocations,
+  });
+}
+
+async function findReusableDiscoverPreviewJobByRequestKey(requestKey = '') {
+  if (!requestKey) return null;
+  const jobs = await DiscoverPreviewJob.find({ requestKey })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean();
+  if (!jobs.length) return null;
+
+  const active = jobs.find((job) => job?.status === 'running' || job?.status === 'queued');
+  if (active) return active;
+
+  const done = jobs.find((job) => job?.status === 'done' && job?.result);
+  if (done) return done;
+
+  return jobs[0] || null;
+}
 
 function createHttpError(status, message) {
   const err = new Error(message);
@@ -442,32 +501,6 @@ function computeDiscoverProgressPercent(stage, destinationsCompleted = 0, destin
   if (stage === 'evaluating') return 86;
   if (stage === 'finalizing') return 96;
   return 4;
-}
-
-function cleanupDiscoverPreviewJobs() {
-  const now = Date.now();
-  for (const [jobId, job] of discoverPreviewJobs.entries()) {
-    const updatedAtMs = new Date(job.updatedAt || job.createdAt || now).getTime();
-    if (!Number.isFinite(updatedAtMs)) {
-      discoverPreviewJobs.delete(jobId);
-      continue;
-    }
-    if (now - updatedAtMs > DISCOVER_PREVIEW_JOB_TTL_MS) {
-      discoverPreviewJobs.delete(jobId);
-    }
-  }
-
-  if (discoverPreviewJobs.size > DISCOVER_PREVIEW_JOB_MAX_ITEMS) {
-    const ordered = Array.from(discoverPreviewJobs.values()).sort(
-      (a, b) => new Date(a.updatedAt || a.createdAt).getTime() - new Date(b.updatedAt || b.createdAt).getTime()
-    );
-    const overflow = discoverPreviewJobs.size - DISCOVER_PREVIEW_JOB_MAX_ITEMS;
-    for (let i = 0; i < overflow; i += 1) {
-      const job = ordered[i];
-      if (!job?.jobId) continue;
-      discoverPreviewJobs.delete(job.jobId);
-    }
-  }
 }
 
 function normalizeProgressDestinations(destinations = []) {
@@ -535,8 +568,13 @@ function updateDiscoverPreviewJobProgress(job, patch = {}) {
 function serializeDiscoverPreviewJob(job, options = {}) {
   const includeResult = !!options.includeResult;
   if (!job) return null;
+  const createdAt = job.createdAt ? new Date(job.createdAt).toISOString() : new Date().toISOString();
+  const startedAt = job.startedAt ? new Date(job.startedAt).toISOString() : null;
+  const updatedAt = job.updatedAt ? new Date(job.updatedAt).toISOString() : createdAt;
+  const finishedAt = job.finishedAt ? new Date(job.finishedAt).toISOString() : null;
   return {
     jobId: job.jobId,
+    requestKey: job.requestKey || null,
     status: job.status,
     stage: job.stage,
     message: job.message,
@@ -552,13 +590,274 @@ function serializeDiscoverPreviewJob(job, options = {}) {
         : null,
       currentStep: job.progress?.currentStep || null,
     },
-    createdAt: job.createdAt,
-    startedAt: job.startedAt,
-    updatedAt: job.updatedAt,
-    finishedAt: job.finishedAt || null,
+    createdAt,
+    startedAt,
+    updatedAt,
+    finishedAt,
     error: job.error || null,
     result: includeResult ? job.result || null : undefined,
   };
+}
+
+function sanitizeDiscoverPreviewPayload(payload = {}) {
+  const rawMinSitelinks = Number(payload?.discoverControl?.minSitelinks);
+  const minSitelinks = Number.isFinite(rawMinSitelinks)
+    ? Math.max(0, Math.floor(rawMinSitelinks))
+    : 1;
+
+  const locations = (Array.isArray(payload?.locations) ? payload.locations : [])
+    .map((loc) => {
+      if (!loc || typeof loc !== 'object') return null;
+      const id = String(loc?._id || loc?.id || loc?.zoneId || loc?.primaryZoneId || '').trim();
+      const type = String(loc?.type || '').trim();
+      if (!id || !type) return null;
+      return {
+        _id: id,
+        type,
+        label: String(loc?.label || loc?.name || '').trim(),
+        name: String(loc?.name || loc?.label || '').trim(),
+      };
+    })
+    .filter(Boolean);
+
+  // Discover se vuelve totalmente backend-owned y no depende de un usuario en sesión.
+  return {
+    locations,
+    discoverControl: { minSitelinks },
+  };
+}
+
+async function claimNextDiscoverPreviewJobForWorker() {
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - DISCOVER_PREVIEW_WORKER_LOCK_MS);
+  const lockToken = new mongoose.Types.ObjectId().toString();
+
+  const claimed = await DiscoverPreviewJob.findOneAndUpdate(
+    {
+      $or: [
+        { status: 'queued', nextRunAt: { $lte: now } },
+        { status: 'running', lockedAt: { $lt: staleBefore } },
+      ],
+    },
+    {
+      $set: {
+        status: 'running',
+        lockToken,
+        lockedAt: now,
+        startedAt: now,
+        finishedAt: null,
+      },
+      $unset: {
+        error: '',
+      },
+    },
+    {
+      sort: { nextRunAt: 1, updatedAt: 1 },
+      new: true,
+    }
+  ).lean();
+
+  return claimed || null;
+}
+
+async function persistDiscoverPreviewJobProgress(jobState, lockToken) {
+  if (!jobState?.jobId || !lockToken) return;
+  await DiscoverPreviewJob.updateOne(
+    { jobId: String(jobState.jobId), lockToken: String(lockToken) },
+    {
+      $set: {
+        stage: jobState.stage,
+        message: jobState.message,
+        progress: jobState.progress,
+        lockedAt: new Date(),
+      },
+    }
+  );
+}
+
+async function processDiscoverPreviewJob(claimedJob) {
+  if (!claimedJob?.jobId || !claimedJob?.lockToken) return;
+
+  if (hasDiscoverCycleExceededMax(claimedJob)) {
+    const elapsedSec = Math.round(getDiscoverCycleElapsedMs(claimedJob) / 1000);
+    await DiscoverPreviewJob.updateOne(
+      { jobId: String(claimedJob.jobId), lockToken: String(claimedJob.lockToken) },
+      {
+        $set: {
+          status: 'failed',
+          stage: 'failed',
+          message: 'This search exceeded the 1-hour processing limit.',
+          error: { message: `Discover search exceeded max duration (${elapsedSec}s)` },
+          lastErrorAt: new Date(),
+          finishedAt: new Date(),
+          nextRunAt: null,
+          lockedAt: null,
+          lockToken: null,
+        },
+      }
+    );
+    return;
+  }
+
+  const jobState = {
+    jobId: String(claimedJob.jobId),
+    requestKey: claimedJob.requestKey || null,
+    payload: sanitizeDiscoverPreviewPayload(claimedJob.payload || {}),
+    status: 'running',
+    stage: String(claimedJob.stage || 'preparing'),
+    message: String(claimedJob.message || stageMessageByCode('preparing')),
+    progress: {
+      percent: Number(claimedJob?.progress?.percent || 0),
+      destinationsTotal: Number(claimedJob?.progress?.destinationsTotal || 0),
+      destinationsCompleted: Number(claimedJob?.progress?.destinationsCompleted || 0),
+      destinations: normalizeProgressDestinations(claimedJob?.progress?.destinations || []),
+      currentDestinationId: claimedJob?.progress?.currentDestinationId || null,
+      currentDestinationLabel: claimedJob?.progress?.currentDestinationLabel || null,
+      currentDestinationIndex: Number.isFinite(Number(claimedJob?.progress?.currentDestinationIndex))
+        ? Number(claimedJob.progress.currentDestinationIndex)
+        : null,
+      currentStep: claimedJob?.progress?.currentStep || null,
+    },
+  };
+
+  const lockToken = String(claimedJob.lockToken);
+  const heartbeatMs = Math.max(5000, Math.floor(DISCOVER_PREVIEW_WORKER_LOCK_MS / 6));
+  const heartbeat = setInterval(() => {
+    DiscoverPreviewJob.updateOne(
+      { jobId: jobState.jobId, lockToken },
+      { $set: { lockedAt: new Date() } }
+    ).catch(() => {});
+  }, heartbeatMs);
+
+  try {
+    updateDiscoverPreviewJobProgress(jobState, {
+      stage: 'preparing',
+      destinationsCompleted: 0,
+      destinations: jobState.progress.destinations,
+    });
+    await persistDiscoverPreviewJobProgress(jobState, lockToken);
+
+    const response = await runDiscoverPreviewCore(jobState.payload, (patch) => {
+      updateDiscoverPreviewJobProgress(jobState, patch);
+      persistDiscoverPreviewJobProgress(jobState, lockToken).catch((err) => {
+        console.warn('[discoverPreview][worker] could not persist progress patch', err?.message || err);
+      });
+    });
+
+    updateDiscoverPreviewJobProgress(jobState, {
+      stage: 'done',
+      percent: 100,
+      destinationsCompleted: jobState.progress.destinationsTotal,
+    });
+
+    await DiscoverPreviewJob.updateOne(
+      { jobId: jobState.jobId, lockToken },
+      {
+        $set: {
+          status: 'done',
+          stage: jobState.stage,
+          message: jobState.message,
+          progress: jobState.progress,
+          result: response,
+          finishedAt: new Date(),
+          nextRunAt: null,
+          lockedAt: null,
+          lockToken: null,
+          error: null,
+        },
+      }
+    );
+  } catch (err) {
+    const nextAttempts = Number(claimedJob?.attempts || 0) + 1;
+    const elapsedMs = getDiscoverCycleElapsedMs(claimedJob);
+    const reachedMaxDuration = elapsedMs >= DISCOVER_PREVIEW_WORKER_MAX_TOTAL_MS;
+    const retryDelayMs = Math.min(
+      DISCOVER_PREVIEW_WORKER_RETRY_MAX_MS,
+      DISCOVER_PREVIEW_WORKER_RETRY_BASE_MS * Math.pow(2, Math.max(0, nextAttempts - 1))
+    );
+    const nextRunAt = new Date(Date.now() + retryDelayMs);
+    const retryInSec = Math.max(1, Math.round(retryDelayMs / 1000));
+
+    if (reachedMaxDuration) {
+      await DiscoverPreviewJob.updateOne(
+        { jobId: jobState.jobId, lockToken },
+        {
+          $set: {
+            status: 'failed',
+            stage: 'failed',
+            message: 'This search exceeded the 1-hour processing limit.',
+            error: { message: err?.message || 'Discover search exceeded max duration' },
+            lastErrorAt: new Date(),
+            finishedAt: new Date(),
+            nextRunAt: null,
+            lockedAt: null,
+            lockToken: null,
+          },
+          $inc: { attempts: 1 },
+        }
+      );
+      console.error('[discoverPreview][worker] job failed and hit max duration; stopping retries', err);
+      return;
+    }
+
+    await DiscoverPreviewJob.updateOne(
+      { jobId: jobState.jobId, lockToken },
+      {
+        $set: {
+          status: 'queued',
+          stage: 'failed',
+          message: `Retrying automatically in ${retryInSec} seconds...`,
+          error: { message: err?.message || 'Unknown error' },
+          lastErrorAt: new Date(),
+          nextRunAt,
+          lockedAt: null,
+          lockToken: null,
+        },
+        $inc: { attempts: 1 },
+      }
+    );
+    console.error('[discoverPreview][worker] job failed, queued for retry', err);
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+async function discoverPreviewWorkerTick() {
+  if (discoverPreviewWorkerInFlight) return;
+  discoverPreviewWorkerInFlight = true;
+  try {
+    const claimed = await claimNextDiscoverPreviewJobForWorker();
+    if (!claimed) return;
+    await processDiscoverPreviewJob(claimed);
+  } catch (err) {
+    console.error('[discoverPreview][worker] tick error', err);
+  } finally {
+    discoverPreviewWorkerInFlight = false;
+  }
+}
+
+function startDiscoverPreviewPersistentWorker() {
+  if (discoverPreviewWorkerTimer) return;
+  discoverPreviewWorkerTimer = setInterval(discoverPreviewWorkerTick, DISCOVER_PREVIEW_WORKER_TICK_MS);
+  setImmediate(() => {
+    discoverPreviewWorkerTick().catch(() => {});
+  });
+}
+
+function getDiscoverCycleStartedAtMs(job = {}) {
+  const cycleMs = new Date(job?.cycleStartedAt || 0).getTime();
+  if (Number.isFinite(cycleMs) && cycleMs > 0) return cycleMs;
+  const createdMs = new Date(job?.createdAt || 0).getTime();
+  if (Number.isFinite(createdMs) && createdMs > 0) return createdMs;
+  return Date.now();
+}
+
+function getDiscoverCycleElapsedMs(job = {}) {
+  return Math.max(0, Date.now() - getDiscoverCycleStartedAtMs(job));
+}
+
+function hasDiscoverCycleExceededMax(job = {}) {
+  return getDiscoverCycleElapsedMs(job) >= DISCOVER_PREVIEW_WORKER_MAX_TOTAL_MS;
 }
 
 async function runDiscoverPreviewCore(payload = {}, onProgress = null) {
@@ -1046,15 +1345,14 @@ exports.discover = async (req, res) => exports.discoverPreview(req, res);
 
 exports.discoverPreviewStartJob = async (req, res) => {
   try {
-    cleanupDiscoverPreviewJobs();
-
-    const payload = req.body || {};
-    const locations = Array.isArray(payload.locations) ? payload.locations : [];
-    if (!Array.isArray(payload.locations)) {
+    const rawPayload = req.body || {};
+    if (!Array.isArray(rawPayload.locations)) {
       return res
         .status(400)
         .json({ success: false, message: 'locations[] must be an array' });
     }
+    const payload = sanitizeDiscoverPreviewPayload(rawPayload);
+    const locations = Array.isArray(payload.locations) ? payload.locations : [];
     for (const loc of locations) {
       if ((locations.length && !loc) || !loc._id || !loc.type) {
         return res.status(400).json({
@@ -1063,11 +1361,70 @@ exports.discoverPreviewStartJob = async (req, res) => {
         });
       }
     }
+    if (rawPayload.locations.length !== locations.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Each location needs _id and type',
+      });
+    }
+
+    const requestKey = buildDiscoverPreviewJobRequestKey(payload);
+    const reusableJob = await findReusableDiscoverPreviewJobByRequestKey(requestKey);
+    if (reusableJob?.status === 'running' || reusableJob?.status === 'queued' || reusableJob?.status === 'done') {
+      startDiscoverPreviewPersistentWorker();
+      return res.status(202).json({
+        success: true,
+        reused: true,
+        job: serializeDiscoverPreviewJob(reusableJob),
+      });
+    }
+    if (reusableJob?.status === 'failed' && reusableJob?.jobId) {
+      await DiscoverPreviewJob.updateOne(
+        { jobId: String(reusableJob.jobId) },
+        {
+          $set: {
+            status: 'queued',
+            stage: 'preparing',
+            message: stageMessageByCode('preparing'),
+            nextRunAt: new Date(),
+            lockedAt: null,
+            lockToken: null,
+            finishedAt: null,
+            payload,
+            progress: {
+              percent: 0,
+              destinationsTotal: locations.length,
+              destinationsCompleted: 0,
+              destinations: locations.map((loc, idx) => toProgressDestination(loc, idx)),
+              currentDestinationId: null,
+              currentDestinationLabel: null,
+              currentDestinationIndex: null,
+              currentStep: 'queued',
+            },
+            result: null,
+            error: null,
+            cycleStartedAt: new Date(),
+            attempts: 0,
+            startedAt: null,
+            lastErrorAt: null,
+          },
+        }
+      );
+      const requeued = await DiscoverPreviewJob.findOne({ jobId: String(reusableJob.jobId) }).lean();
+      startDiscoverPreviewPersistentWorker();
+      return res.status(202).json({
+        success: true,
+        reused: true,
+        requeued: true,
+        job: serializeDiscoverPreviewJob(requeued || reusableJob),
+      });
+    }
 
     const jobId = new mongoose.Types.ObjectId().toString();
-    const nowIso = new Date().toISOString();
-    const job = {
+    const createdDoc = await DiscoverPreviewJob.create({
       jobId,
+      requestKey,
+      payload,
       status: 'queued',
       stage: 'preparing',
       message: stageMessageByCode('preparing'),
@@ -1083,56 +1440,20 @@ exports.discoverPreviewStartJob = async (req, res) => {
       },
       result: null,
       error: null,
-      createdAt: nowIso,
+      attempts: 0,
+      cycleStartedAt: new Date(),
+      nextRunAt: new Date(),
+      lockedAt: null,
+      lockToken: null,
       startedAt: null,
-      updatedAt: nowIso,
       finishedAt: null,
-    };
-    discoverPreviewJobs.set(jobId, job);
-
-    setImmediate(async () => {
-      try {
-        job.status = 'running';
-        job.startedAt = new Date().toISOString();
-        job.updatedAt = job.startedAt;
-        updateDiscoverPreviewJobProgress(job, {
-          stage: 'preparing',
-          destinationsCompleted: 0,
-          destinations: job.progress.destinations,
-        });
-
-        const response = await runDiscoverPreviewCore(payload, (patch) => {
-          updateDiscoverPreviewJobProgress(job, patch);
-        });
-
-        job.status = 'done';
-        job.result = response;
-        job.finishedAt = new Date().toISOString();
-        job.updatedAt = job.finishedAt;
-        updateDiscoverPreviewJobProgress(job, {
-          stage: 'done',
-          percent: 100,
-          destinationsCompleted: job.progress.destinationsTotal,
-        });
-      } catch (err) {
-        job.status = 'failed';
-        job.stage = 'failed';
-        job.message = stageMessageByCode('failed');
-        job.error = {
-          message: err?.message || 'Unknown error',
-        };
-        job.finishedAt = new Date().toISOString();
-        job.updatedAt = job.finishedAt;
-        updateDiscoverPreviewJobProgress(job, { percent: 100 });
-        console.error('Error in discoverPreviewStartJob worker:', err);
-      } finally {
-        cleanupDiscoverPreviewJobs();
-      }
     });
+
+    startDiscoverPreviewPersistentWorker();
 
     return res.status(202).json({
       success: true,
-      job: serializeDiscoverPreviewJob(job),
+      job: serializeDiscoverPreviewJob(createdDoc.toObject()),
     });
   } catch (err) {
     console.error('Error in discoverPreviewStartJob:', err);
@@ -1141,45 +1462,53 @@ exports.discoverPreviewStartJob = async (req, res) => {
 };
 
 exports.discoverPreviewJobStatus = async (req, res) => {
-  cleanupDiscoverPreviewJobs();
-  const jobId = String(req.params.jobId || '').trim();
-  const job = discoverPreviewJobs.get(jobId);
-  if (!job) {
-    return res.status(404).json({ success: false, message: 'Job not found' });
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    const job = await DiscoverPreviewJob.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+    return res.json({
+      success: true,
+      job: serializeDiscoverPreviewJob(job),
+    });
+  } catch (err) {
+    console.error('Error in discoverPreviewJobStatus:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
-  return res.json({
-    success: true,
-    job: serializeDiscoverPreviewJob(job),
-  });
 };
 
 exports.discoverPreviewJobResult = async (req, res) => {
-  cleanupDiscoverPreviewJobs();
-  const jobId = String(req.params.jobId || '').trim();
-  const job = discoverPreviewJobs.get(jobId);
-  if (!job) {
-    return res.status(404).json({ success: false, message: 'Job not found' });
-  }
-  if (job.status === 'failed') {
-    return res.status(422).json({
-      success: false,
-      message: job?.error?.message || 'Job failed',
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    const job = await DiscoverPreviewJob.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+    if (job.status === 'failed') {
+      return res.status(422).json({
+        success: false,
+        message: job?.error?.message || 'Job failed',
+        job: serializeDiscoverPreviewJob(job),
+      });
+    }
+    if (job.status !== 'done' || !job.result) {
+      return res.status(409).json({
+        success: false,
+        message: 'Job still in progress',
+        job: serializeDiscoverPreviewJob(job),
+      });
+    }
+    return res.json({
+      success: true,
+      data: Array.isArray(job?.result?.data) ? job.result.data : [],
+      meta: job?.result?.meta || {},
       job: serializeDiscoverPreviewJob(job),
     });
+  } catch (err) {
+    console.error('Error in discoverPreviewJobResult:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
-  if (job.status !== 'done' || !job.result) {
-    return res.status(409).json({
-      success: false,
-      message: 'Job still in progress',
-      job: serializeDiscoverPreviewJob(job),
-    });
-  }
-  return res.json({
-    success: true,
-    data: job.result.data || [],
-    meta: job.result.meta || {},
-    job: serializeDiscoverPreviewJob(job),
-  });
 };
 
 // ===== Discover Preview (OPEN DATA, NO Google) =====
@@ -1329,6 +1658,631 @@ exports.discoverPreviewSuggest = async (req, res) => {
   }
 };
 
+exports.importSocialActivities = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const labels = extractSocialImportLabels(payload);
+    const url = String(payload?.url || '').trim();
+    const text = String(payload?.text || '').trim();
+    const source = normalizeSocialImportSource(payload?.source, url);
+    const now = new Date();
+    const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
+    const postId = extractSocialPostId(normalizedUrl || url);
+    const requester = normalizeObjectIdString(req?.user?._id || req?.user?.id);
+
+    if (!labels.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No place candidates were provided.',
+      });
+    }
+
+    const cachedLink = normalizedUrl
+      ? await SocialImportLink.findOne({ normalizedUrl }).lean()
+      : null;
+    const cachedActivities = await resolveCachedSocialImportActivities(cachedLink);
+    if (cachedActivities.length) {
+      await recordSocialImportLinkUsage({
+        normalizedUrl,
+        originalUrl: url,
+        source,
+        postId,
+        userId: requester,
+        now,
+      });
+      return res.status(200).json({
+        success: true,
+        data: cachedActivities,
+        meta: {
+          cached: true,
+          linkId: String(cachedLink._id),
+          source,
+          receivedCandidates: labels.length,
+          resolvedCount: cachedActivities.length,
+          savedCount: cachedActivities.length,
+          unresolved: [],
+        },
+      });
+    }
+
+    const location = await resolveSocialImportLocation({
+      ...payload,
+      candidates: labels,
+    });
+    const locationContext = location?._id
+      ? await resolveLocationContextForPreview(location)
+      : null;
+    const resolvedCandidates = [];
+    const unresolved = [];
+    const maxCandidates = Math.min(labels.length, Math.max(1, Number(payload?.limit || 8)));
+
+    for (const item of labels.slice(0, maxCandidates)) {
+      const query = String(item?.label || '').trim();
+      if (!query) continue;
+      try {
+        const searchQuery = [
+          query,
+          locationContext?.name || '',
+        ].filter(Boolean).join(' ');
+        const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
+          textQuery: searchQuery,
+          maxResultCount: 5,
+        });
+        const selected = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text);
+        if (!selected) {
+          unresolved.push({ label: query, reason: 'no_google_place_match' });
+          continue;
+        }
+        resolvedCandidates.push({
+          label: query,
+          source: item.source || 'candidate',
+          googleCache: selected,
+          confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+          evidence: text,
+          type: 'exact_place',
+        });
+      } catch (err) {
+        unresolved.push({ label: query, reason: err?.message || 'search_failed' });
+      }
+    }
+
+    if (!resolvedCandidates.length) {
+      await upsertSocialImportLinkResolution({
+        normalizedUrl,
+        originalUrl: url,
+        source,
+        postId,
+        labels,
+        resolvedActivities: [],
+        status: 'failed',
+        error: 'No candidates could be resolved with Google Places.',
+        userId: requester,
+        now,
+      });
+      return res.status(422).json({
+        success: false,
+        message: 'No candidates could be resolved with Google Places.',
+        meta: {
+          location,
+          unresolved,
+        },
+      });
+    }
+
+    const persisted = await persistGoogleCacheSocialCandidates(resolvedCandidates, {
+      location,
+      locationContext,
+      source,
+      url,
+      normalizedUrl,
+      text,
+      now,
+    });
+
+    const resolvedActivitiesForLink = persisted.saved.map((activity, index) => ({
+      activityId: activity._id,
+      role: index === 0 ? 'primary' : 'secondary',
+      candidateType: 'exact_place',
+      confidence: Number(activity?._socialImport?.confidence || 0.72),
+      status: activity?.audit?.status === 'approved' ? 'approved' : 'pending_review',
+    }));
+
+    const linkDoc = await upsertSocialImportLinkResolution({
+      normalizedUrl,
+      originalUrl: url,
+      source,
+      postId,
+      labels,
+      resolvedActivities: resolvedActivitiesForLink,
+      status: persisted.saved.length ? 'resolved' : 'failed',
+      error: persisted.saved.length ? '' : 'Resolved candidates could not be persisted.',
+      userId: requester,
+      now,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: persisted.saved,
+      meta: {
+        location,
+        linkId: linkDoc?._id ? String(linkDoc._id) : undefined,
+        cached: false,
+        source,
+        receivedCandidates: labels.length,
+        resolvedCount: resolvedCandidates.length,
+        savedCount: persisted.saved.length,
+        skippedWithoutGeoCount: 0,
+        skippedWithoutGeo: [],
+        persistErrorCount: persisted.failed.length,
+        persistErrors: persisted.failed,
+        unresolved,
+      },
+    });
+  } catch (err) {
+    console.error('Error importing social activities:', err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || 'Failed to import social activities',
+    });
+  }
+};
+
+exports.previewSocialActivities = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const labels = extractSocialImportLabels(payload);
+    const url = String(payload?.url || '').trim();
+    const text = String(payload?.text || '').trim();
+    const source = normalizeSocialImportSource(payload?.source, url);
+
+    if (!labels.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No place candidates were provided.',
+      });
+    }
+
+    const location = await resolveSocialImportLocation({
+      ...payload,
+      candidates: labels,
+    });
+    const locationContext = location?._id
+      ? await resolveLocationContextForPreview(location)
+      : null;
+    const resolvedCandidates = [];
+    const unresolved = [];
+    const maxCandidates = Math.min(labels.length, Math.max(1, Number(payload?.limit || 6)));
+
+    for (const item of labels.slice(0, maxCandidates)) {
+      const query = String(item?.label || '').trim();
+      if (!query) continue;
+      try {
+        const searchQuery = [
+          query,
+          locationContext?.name || '',
+        ].filter(Boolean).join(' ');
+        const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
+          textQuery: searchQuery,
+          maxResultCount: 5,
+        });
+        const selected = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text);
+        if (!selected) {
+          unresolved.push({ label: query, reason: 'no_google_place_match' });
+          continue;
+        }
+        resolvedCandidates.push({
+          name: query,
+          nameSource: 'source_claim',
+          visibility: 'imported_private',
+          type: inferActivityTypeFromGoogleTypes(selected.types),
+          googleCache: buildGoogleCachePayload(selected),
+          ranking: {
+            ratingAvg: 0,
+            reviewsCount: 0,
+            priority: calculatePriorityFromGoogleCache(selected),
+            prioritySource: 'google_cache_user_trend',
+            priorityFormulaVersion: 'google-cache-v1',
+          },
+          sourceClaims: [buildGoogleCacheSocialSourceClaim({
+            label: query,
+            googleCache: selected,
+            confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+            evidence: text,
+          }, {
+            source,
+            url,
+            text,
+          })],
+          _socialImport: {
+            confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+            originalLabel: query,
+            previewOnly: true,
+          },
+        });
+      } catch (err) {
+        unresolved.push({ label: query, reason: err?.message || 'search_failed' });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: resolvedCandidates,
+      meta: {
+        previewOnly: true,
+        location,
+        source,
+        receivedCandidates: labels.length,
+        resolvedCount: resolvedCandidates.length,
+        unresolved,
+      },
+    });
+  } catch (err) {
+    console.error('Error previewing social activities:', err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || 'Failed to preview social activities',
+    });
+  }
+};
+
+async function resolveCachedSocialImportActivities(linkDoc = null) {
+  const refs = Array.isArray(linkDoc?.resolvedActivities)
+    ? linkDoc.resolvedActivities.filter((ref) => {
+        const status = String(ref?.status || '').trim().toLowerCase();
+        return ref?.activityId && status !== 'rejected' && status !== 'merged';
+      })
+    : [];
+  if (!refs.length) return [];
+
+  const ids = Array.from(new Set(refs.map((ref) => String(ref.activityId)).filter(Boolean)));
+  if (!ids.length) return [];
+
+  const docs = await Activity.find({ _id: { $in: ids } }).lean();
+  const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
+  const out = [];
+
+  for (const ref of refs) {
+    const doc = byId.get(String(ref.activityId));
+    if (!doc) continue;
+    const refreshed = await refreshImportedActivityCacheIfNeeded(doc);
+    out.push({
+      ...refreshed,
+      _socialImport: {
+        cached: true,
+        linkId: linkDoc?._id ? String(linkDoc._id) : undefined,
+        confidence: Number(ref?.confidence || 0),
+        role: ref?.role || 'primary',
+      },
+    });
+  }
+
+  return out;
+}
+
+async function refreshImportedActivityCacheIfNeeded(activity = {}) {
+  if (!activity?._id || !isGoogleCacheExpired(activity)) return activity;
+  if (activityHasCanonicalData(activity)) return activity;
+
+  const placeId = String(activity?.googleCache?.placeId || '').trim();
+  if (!placeId) return activity;
+
+  try {
+    const refreshed = await refreshGoogleCacheByPlaceId(placeId, activity.googleCache || {});
+    if (!refreshed?.placeId) {
+      return await Activity.findByIdAndUpdate(
+        activity._id,
+        {
+          $set: {
+            'googleCache.status': 'refresh_failed',
+            'googleCache.lastError': 'Google Places refresh returned no place.',
+          },
+        },
+        { new: true }
+      ).lean() || activity;
+    }
+
+    const priority = calculatePriorityFromGoogleCache(refreshed);
+    return await Activity.findByIdAndUpdate(
+      activity._id,
+      {
+        $set: {
+          googleCache: refreshed,
+          'ranking.priority': priority,
+          'ranking.prioritySource': 'google_cache_user_trend',
+          'ranking.priorityFormulaVersion': 'google-cache-v1',
+        },
+      },
+      { new: true }
+    ).lean() || activity;
+  } catch (err) {
+    return await Activity.findByIdAndUpdate(
+      activity._id,
+      {
+        $set: {
+          'googleCache.status': 'refresh_failed',
+          'googleCache.lastError': String(err?.message || err || 'Google Places refresh failed').slice(0, 500),
+        },
+      },
+      { new: true }
+    ).lean() || activity;
+  }
+}
+
+async function persistGoogleCacheSocialCandidates(candidates = [], options = {}) {
+  const out = [];
+  const failed = [];
+  const now = options?.now instanceof Date && !Number.isNaN(options.now.getTime())
+    ? options.now
+    : new Date();
+  const baseLocObj = options?.location?._id
+    ? await resolveActivityLocationObject(options.location)
+    : {};
+
+  for (const candidate of candidates) {
+    const label = String(candidate?.label || candidate?.googleCache?.name || '').trim();
+    const googleCache = buildGoogleCachePayload(candidate?.googleCache || {}, { now });
+    const placeId = String(googleCache?.placeId || '').trim();
+
+    if (!label || !placeId || !validGeoPoint(googleCache?.geo)) {
+      failed.push({
+        name: label || null,
+        placeId: placeId || null,
+        message: 'Missing label, Google placeId, or Google coordinates.',
+      });
+      continue;
+    }
+
+    const sourceClaim = buildGoogleCacheSocialSourceClaim(candidate, options);
+    const priority = calculatePriorityFromGoogleCache(googleCache);
+    const location = {
+      ...baseLocObj,
+    };
+
+    try {
+      let doc = await Activity.findOne({ 'googleCache.placeId': placeId }).lean();
+      if (!doc) {
+        doc = await findExistingActivityForGoogleCache(googleCache, label, options.location);
+      }
+
+      if (!doc) {
+        const slug = await ensureUniqueActivitySlug(slugify(label || googleCache.name || placeId));
+        const externalRefId = buildSocialImportActivityExternalRefId({
+          source: options.source,
+          normalizedUrl: options.normalizedUrl || options.url,
+          postId: extractSocialPostId(options.normalizedUrl || options.url),
+          label,
+        });
+
+        try {
+          doc = await Activity.create({
+            name: label,
+            nameSource: 'source_claim',
+            slug,
+            description: '',
+            type: inferActivityTypeFromGoogleTypes(googleCache.types),
+            active: true,
+            visibility: 'imported_private',
+            location,
+            media: { images: [] },
+            ranking: {
+              ratingAvg: 0,
+              reviewsCount: 0,
+              priority,
+              prioritySource: 'google_cache_user_trend',
+              priorityFormulaVersion: 'google-cache-v1',
+            },
+            audit: {
+              isAudited: false,
+              status: 'pending',
+              notes: 'Imported from social share flow. Google fields are temporary cache only.',
+            },
+            externalRef: {
+              provider: 'social_import',
+              id: externalRefId,
+              url: options.url || undefined,
+            },
+            sourceClaims: [sourceClaim],
+            googleCache,
+          });
+          doc = doc.toObject ? doc.toObject() : doc;
+        } catch (createErr) {
+          if (Number(createErr?.code) !== 11000) throw createErr;
+          doc = await Activity.findOne({ 'googleCache.placeId': placeId }).lean();
+          if (!doc) throw createErr;
+        }
+      }
+
+      if (doc?._id) {
+        const updateOps = {
+          $set: {
+            googleCache,
+            'ranking.priority': priority,
+            'ranking.prioritySource': 'google_cache_user_trend',
+            'ranking.priorityFormulaVersion': 'google-cache-v1',
+          },
+        };
+
+        if (!doc.visibility) {
+          const isApproved = !!doc?.audit?.isAudited && String(doc?.audit?.status || '').toLowerCase() === 'approved';
+          updateOps.$set.visibility = isApproved ? 'public' : 'imported_private';
+        }
+        if (doc.active === false && String(doc?.visibility || '').toLowerCase() === 'imported_private') {
+          updateOps.$set.active = true;
+        }
+        if (!hasEquivalentSourceClaim(doc, sourceClaim)) {
+          updateOps.$push = { sourceClaims: sourceClaim };
+        }
+
+        doc = await Activity.findByIdAndUpdate(doc._id, updateOps, { new: true }).lean() || doc;
+      }
+
+      out.push({
+        ...doc,
+        _socialImport: {
+          confidence: Number(candidate?.confidence || sourceClaim.confidence || 0.72),
+          originalLabel: label,
+          googlePlaceId: placeId,
+        },
+      });
+    } catch (err) {
+      failed.push({
+        name: label || null,
+        placeId,
+        message: err?.message || 'persist failed',
+      });
+    }
+  }
+
+  return { saved: out, failed };
+}
+
+async function upsertSocialImportLinkResolution(options = {}) {
+  const normalizedUrl = String(options?.normalizedUrl || '').trim();
+  if (!normalizedUrl) return null;
+
+  const now = options?.now instanceof Date && !Number.isNaN(options.now.getTime())
+    ? options.now
+    : new Date();
+  const resolvedActivities = Array.isArray(options?.resolvedActivities)
+    ? options.resolvedActivities
+        .map((ref) => ({
+          activityId: ref.activityId,
+          role: ref.role || 'primary',
+          candidateType: ref.candidateType || 'exact_place',
+          confidence: Number.isFinite(Number(ref.confidence)) ? Number(ref.confidence) : undefined,
+          status: ref.status || 'pending_review',
+        }))
+        .filter((ref) => ref.activityId)
+    : [];
+  const extractionCandidates = Array.isArray(options?.labels)
+    ? options.labels.map((item) => ({
+        name: String(item?.label || '').trim(),
+        context: '',
+        type: 'exact_place',
+        confidence: 0.72,
+        evidence: String(item?.source || '').trim(),
+      })).filter((item) => item.name)
+    : [];
+
+  const setPayload = {
+    source: options.source || 'social_import',
+    resolvedActivities,
+    'extraction.status': options.status || (resolvedActivities.length ? 'resolved' : 'failed'),
+    'extraction.fetchedAt': now,
+    'extraction.method': 'share-link-google-cache-v1',
+    'extraction.candidates': extractionCandidates,
+    'admin.priorityScore': Math.min(100, Math.round((resolvedActivities.length * 20) + 10)),
+  };
+  if (options.postId) setPayload.postId = options.postId;
+  if (options.error) setPayload['extraction.error'] = options.error;
+
+  const update = {
+    $set: {
+      ...setPayload,
+    },
+    $setOnInsert: {
+      normalizedUrl,
+    },
+  };
+  if (!options.error) {
+    update.$unset = { 'extraction.error': '' };
+  }
+  if (options.originalUrl) {
+    update.$addToSet = { originalUrls: String(options.originalUrl).trim() };
+  }
+
+  const doc = await SocialImportLink.findOneAndUpdate(
+    { normalizedUrl },
+    update,
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  await recordSocialImportLinkUsage({
+    normalizedUrl,
+    originalUrl: options.originalUrl,
+    source: options.source,
+    postId: options.postId,
+    userId: options.userId,
+    now,
+  });
+
+  return doc;
+}
+
+async function recordSocialImportLinkUsage(options = {}) {
+  const normalizedUrl = String(options?.normalizedUrl || '').trim();
+  if (!normalizedUrl) return null;
+
+  const now = options?.now instanceof Date && !Number.isNaN(options.now.getTime())
+    ? options.now
+    : new Date();
+  const userId = normalizeObjectIdString(options?.userId);
+  const baseSet = {
+    source: options.source || 'social_import',
+    'usage.lastSharedAt': now,
+  };
+  if (options.postId) baseSet.postId = options.postId;
+  const addToSet = options.originalUrl
+    ? { originalUrls: String(options.originalUrl).trim() }
+    : undefined;
+
+  if (userId) {
+    const existingUser = await SocialImportLink.findOne({
+      normalizedUrl,
+      'usage.users.userId': userId,
+    }).select('_id').lean();
+
+    if (existingUser?._id) {
+      return SocialImportLink.updateOne(
+        { normalizedUrl, 'usage.users.userId': userId },
+        {
+          $set: {
+            ...baseSet,
+            'usage.users.$.lastSharedAt': now,
+          },
+          $inc: {
+            'usage.shareCount': 1,
+            'usage.users.$.count': 1,
+          },
+          ...(addToSet ? { $addToSet: addToSet } : {}),
+        }
+      );
+    }
+
+    return SocialImportLink.updateOne(
+      { normalizedUrl },
+      {
+        $set: baseSet,
+        $inc: {
+          'usage.shareCount': 1,
+          'usage.uniqueUserCount': 1,
+        },
+        $push: {
+          'usage.users': {
+            userId,
+            firstSharedAt: now,
+            lastSharedAt: now,
+            count: 1,
+          },
+        },
+        ...(addToSet ? { $addToSet: addToSet } : {}),
+      },
+      { upsert: true }
+    );
+  }
+
+  return SocialImportLink.updateOne(
+    { normalizedUrl },
+    {
+      $set: baseSet,
+      $inc: { 'usage.shareCount': 1 },
+      ...(addToSet ? { $addToSet: addToSet } : {}),
+      $setOnInsert: { normalizedUrl },
+    },
+    { upsert: true }
+  );
+}
+
 async function resolveLocationContextForPreview(location) {
   if (!location?._id || !location?.type) return null;
 
@@ -1356,7 +2310,7 @@ async function resolveLocationContextForPreview(location) {
   };
 }
 
-async function persistOpenCandidatesForLocation(candidates = [], location = null) {
+async function persistOpenCandidatesForLocation(candidates = [], location = null, options = {}) {
   if (!Array.isArray(candidates) || !candidates.length || !location) {
     return { saved: [], skippedWithoutGeo: [], failed: [] };
   }
@@ -1461,6 +2415,16 @@ async function persistOpenCandidatesForLocation(candidates = [], location = null
               url: `https://www.wikidata.org/wiki/${String(externalId)}`,
             }
           : null;
+      const shouldAttachSourceClaim = !!options?.sourceClaim;
+      const buildSourceClaim = (status = 'pending') => shouldAttachSourceClaim
+        ? buildSocialSourceClaim(c, externalRef, {
+            ...options,
+            sourceClaim: {
+              ...(options.sourceClaim || {}),
+              status,
+            },
+          })
+        : null;
 
       const classIdsRaw = Array.isArray(c?._preview?.classIds) ? c._preview.classIds : [];
       const classIds = classIdsRaw
@@ -1505,7 +2469,7 @@ async function persistOpenCandidatesForLocation(candidates = [], location = null
             name: c.name,
             slug,
             description: c.description || '',
-            active: true,
+            active: typeof options.active === 'boolean' ? options.active : true,
             location: locObj,
             media: {
               cover: c?.media?.cover || null,
@@ -1527,6 +2491,16 @@ async function persistOpenCandidatesForLocation(candidates = [], location = null
             ...(derivedDuration ? { defaultDurationMin: derivedDuration } : {}),
             ...(activityCategoryIds.length ? { activityCategoryIds } : {}),
             ...(externalRef ? { externalRef } : {}),
+            ...(shouldAttachSourceClaim ? { sourceClaims: [buildSourceClaim(options?.sourceClaim?.status || 'pending')] } : {}),
+            ...(options.audit
+              ? {
+                  audit: {
+                    isAudited: !!options.audit.isAudited,
+                    status: options.audit.status || 'pending',
+                    notes: options.audit.notes || undefined,
+                  },
+                }
+              : {}),
           });
         } catch (createErr) {
           // Concurrency-safe fallback: if a duplicate key races in, recover existing row.
@@ -1693,8 +2667,17 @@ async function persistOpenCandidatesForLocation(candidates = [], location = null
             update.defaultDurationMin = mergedDerivedDuration;
           }
         }
+        const existingIsApproved = !!doc?.active && !!doc?.audit?.isAudited && String(doc?.audit?.status || '').toLowerCase() === 'approved';
+        const sourceClaim = buildSourceClaim(existingIsApproved ? 'accepted' : (options?.sourceClaim?.status || 'pending'));
+        const updateOps = {};
         if (Object.keys(update).length) {
-          doc = await Activity.findByIdAndUpdate(doc._id, { $set: update }, { new: true }).lean();
+          updateOps.$set = update;
+        }
+        if (sourceClaim && !hasEquivalentSourceClaim(doc, sourceClaim)) {
+          updateOps.$push = { sourceClaims: sourceClaim };
+        }
+        if (Object.keys(updateOps).length) {
+          doc = await Activity.findByIdAndUpdate(doc._id, updateOps, { new: true, runValidators: true }).lean();
         }
       }
 
@@ -1877,6 +2860,7 @@ function normalizeActivityTypeValue(raw) {
 }
 
 const BUSINESS_UNIT_WRITE_ROLES = new Set(['owner', 'admin', 'operator']);
+const SOCIAL_SOURCE_CLAIM_VALUES = ['instagram', 'tiktok', 'social_import'];
 
 function isAdminUser(req) {
   return String(req?.user?.role || '').trim().toLowerCase() === 'admin';
@@ -1967,6 +2951,549 @@ async function resolveActivityWriteAccess(activityDoc, req) {
 
 function getActivityDisplayName(activityDoc = {}) {
   return String(activityDoc?.name || '').trim() || 'Untitled activity';
+}
+
+function hasSocialSourceClaim(activityDoc = {}) {
+  const claims = Array.isArray(activityDoc?.sourceClaims) ? activityDoc.sourceClaims : [];
+  return claims.some((claim) => SOCIAL_SOURCE_CLAIM_VALUES.includes(String(claim?.source || '').trim().toLowerCase()));
+}
+
+function escapeRegExp(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function shortHash(value = '') {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, 16);
+}
+
+function normalizeSocialImportUrl(rawUrl = '') {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+
+  try {
+    const parsed = new URL(input);
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const path = parsed.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/g, '');
+
+    if (host.includes('instagram.com')) {
+      const match = path.match(/^\/(reel|p|tv)\/([^/]+)/i);
+      if (match) {
+        return `https://www.instagram.com/${match[1].toLowerCase()}/${match[2]}/`;
+      }
+    }
+
+    if (host.includes('tiktok.com')) {
+      const match = path.match(/^\/@([^/]+)\/video\/([^/]+)/i);
+      if (match) {
+        return `https://www.tiktok.com/@${match[1]}/video/${match[2]}`;
+      }
+    }
+
+    return `https://${host}${path || '/'}`;
+  } catch (err) {
+    return input.replace(/[?#].*$/g, '').replace(/\/+$/g, '');
+  }
+}
+
+function buildSyntheticSocialImportUrl(source = 'social_import', text = '', labels = []) {
+  const seed = JSON.stringify({
+    source: normalizeSocialImportSource(source, ''),
+    text: String(text || '').slice(0, 1000),
+    labels: labels.map((item) => String(item?.label || item || '').trim()).filter(Boolean),
+  });
+  return `social-import://${shortHash(seed)}`;
+}
+
+function extractSocialPostId(rawUrl = '') {
+  const normalized = normalizeSocialImportUrl(rawUrl);
+  if (!normalized) return '';
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    if (host.includes('instagram.com')) {
+      const match = parsed.pathname.match(/^\/(?:reel|p|tv)\/([^/]+)/i);
+      return match?.[1] ? String(match[1]).trim() : '';
+    }
+    if (host.includes('tiktok.com')) {
+      const match = parsed.pathname.match(/\/video\/([^/]+)/i);
+      return match?.[1] ? String(match[1]).trim() : '';
+    }
+  } catch (err) {
+    // Fall through to stable hash fallback.
+  }
+
+  return shortHash(normalized);
+}
+
+function normalizeSocialImportSource(source = '', url = '') {
+  const raw = String(source || '').trim().toLowerCase();
+  if (SOCIAL_SOURCE_CLAIM_VALUES.includes(raw)) return raw;
+  const rawUrl = String(url || '').toLowerCase();
+  if (rawUrl.includes('instagram.com')) return 'instagram';
+  if (rawUrl.includes('tiktok.com')) return 'tiktok';
+  return 'social_import';
+}
+
+function normalizeComparableText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '') {
+  const placeName = normalizeComparableText(place?.name || '');
+  const target = normalizeComparableText(label || '');
+  const formattedAddress = normalizeComparableText(place?.formattedAddress || '');
+  const ctx = normalizeComparableText(context || '');
+  if (!placeName || !target) return 0;
+
+  let score = 0.35;
+  if (placeName === target) score += 0.5;
+  else if (placeName.includes(target) || target.includes(placeName)) score += 0.35;
+  else {
+    const targetTokens = new Set(target.split(' ').filter((t) => t.length > 2));
+    const nameTokens = new Set(placeName.split(' ').filter((t) => t.length > 2));
+    const hits = Array.from(targetTokens).filter((token) => nameTokens.has(token)).length;
+    if (targetTokens.size) score += Math.min(0.28, (hits / targetTokens.size) * 0.28);
+  }
+
+  if (ctx && formattedAddress) {
+    const contextTokens = ctx.split(' ').filter((token) => token.length > 3);
+    if (contextTokens.some((token) => formattedAddress.includes(token))) score += 0.12;
+  }
+
+  if (validGeoPoint(place?.geo)) score += 0.08;
+  if (place?.ratingAvg || place?.reviewsCount) score += 0.05;
+  return Math.max(0, Math.min(0.98, Number(score.toFixed(2))));
+}
+
+function pickBestGoogleCachePlace(places = [], label = '', context = '') {
+  if (!Array.isArray(places) || !places.length) return null;
+  const ranked = places
+    .map((place) => ({
+      place,
+      score: scoreGoogleCachePlaceMatch(place, label, context),
+    }))
+    .filter((entry) => (
+      entry?.place?.placeId &&
+      validGeoPoint(entry.place.geo) &&
+      isResolvableGoogleActivityPlace(entry.place)
+    ))
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  if (!best || best.score < 0.48) return null;
+  return best.place;
+}
+
+function isResolvableGoogleActivityPlace(place = {}) {
+  const types = new Set(
+    (Array.isArray(place?.types) ? place.types : [])
+      .map((type) => String(type || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (!types.size) return true;
+
+  const areaTypes = [
+    'locality',
+    'sublocality',
+    'neighborhood',
+    'administrative_area_level_1',
+    'administrative_area_level_2',
+    'administrative_area_level_3',
+    'country',
+    'political',
+  ];
+  const concreteTypes = [
+    'establishment',
+    'point_of_interest',
+    'tourist_attraction',
+    'restaurant',
+    'cafe',
+    'bar',
+    'museum',
+    'park',
+    'lodging',
+    'store',
+    'shopping_mall',
+    'place_of_worship',
+    'transit_station',
+  ];
+
+  const isArea = areaTypes.some((type) => types.has(type));
+  const isConcrete = concreteTypes.some((type) => types.has(type));
+  return !isArea || isConcrete;
+}
+
+async function findExistingActivityForGoogleCache(googleCache = {}, label = '', location = null) {
+  const candidates = [];
+  const geo = googleCache?.geo;
+
+  if (validGeoPoint(geo)) {
+    try {
+      const nearby = await Activity.find({
+        'location.geo': {
+          $near: {
+            $geometry: geo,
+            $maxDistance: 120,
+          },
+        },
+      })
+        .select('_id name nameSource slug location audit active visibility sourceClaims googleCache ranking')
+        .limit(12)
+        .lean();
+      candidates.push(...nearby);
+    } catch (err) {
+      console.warn('[socialImport] nearby dedupe failed', err?.message || err);
+    }
+  }
+
+  const labelSlug = slugify(label || googleCache?.name || '');
+  if (labelSlug) {
+    const slugQuery = { slug: labelSlug };
+    const zoneId = normalizeObjectIdString(location?._id);
+    if (zoneId) {
+      slugQuery.$or = [
+        { 'location.primaryZoneId': zoneId },
+        { 'location.zonePathIds': zoneId },
+      ];
+    }
+    const bySlug = await Activity.find(slugQuery)
+      .select('_id name nameSource slug location audit active visibility sourceClaims googleCache ranking')
+      .limit(5)
+      .lean();
+    candidates.push(...bySlug);
+  }
+
+  const seen = new Set();
+  const uniqueCandidates = candidates.filter((candidate) => {
+    const id = String(candidate?._id || '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  const target = label || googleCache?.name || '';
+  let best = null;
+  let bestScore = 0;
+  for (const candidate of uniqueCandidates) {
+    const score = scoreGoogleCachePlaceMatch(
+      {
+        name: candidate?.name,
+        formattedAddress: candidate?.location?.address || '',
+        geo: candidate?.location?.geo,
+      },
+      target,
+      googleCache?.formattedAddress || ''
+    );
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 0.55 ? best : null;
+}
+
+function inferActivityTypeFromGoogleTypes(types = []) {
+  const set = new Set(
+    (Array.isArray(types) ? types : [])
+      .map((type) => String(type || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  if (['lodging', 'hotel', 'hostel', 'campground', 'rv_park'].some((type) => set.has(type))) {
+    return 'accommodation';
+  }
+  if ([
+    'restaurant',
+    'cafe',
+    'bar',
+    'bakery',
+    'meal_delivery',
+    'meal_takeaway',
+    'night_club',
+    'food',
+  ].some((type) => set.has(type))) {
+    return 'food_drinks';
+  }
+  if ([
+    'airport',
+    'bus_station',
+    'train_station',
+    'subway_station',
+    'transit_station',
+    'taxi_stand',
+    'car_rental',
+  ].some((type) => set.has(type))) {
+    return 'transport';
+  }
+  if ([
+    'atm',
+    'bank',
+    'pharmacy',
+    'hospital',
+    'laundry',
+    'supermarket',
+    'convenience_store',
+    'travel_agency',
+  ].some((type) => set.has(type))) {
+    return 'practical_services';
+  }
+  if ([
+    'tourist_attraction',
+    'museum',
+    'art_gallery',
+    'park',
+    'amusement_park',
+    'aquarium',
+    'zoo',
+    'place_of_worship',
+  ].some((type) => set.has(type))) {
+    return 'experience';
+  }
+  return 'place';
+}
+
+function buildGoogleCacheSocialSourceClaim(candidate = {}, options = {}) {
+  const source = normalizeSocialImportSource(options.source, options.url);
+  const label = String(candidate?.label || candidate?.googleCache?.name || '').trim();
+  const text = String(options?.text || '').trim();
+  const evidence = String(candidate?.evidence || text || '').trim();
+  const confidence = Number.isFinite(Number(candidate?.confidence))
+    ? Math.max(0, Math.min(1, Number(candidate.confidence)))
+    : 0.72;
+
+  return {
+    source,
+    url: String(options.url || '').trim() || undefined,
+    extractedName: label || undefined,
+    extractedContext: text ? text.slice(0, 500) : undefined,
+    evidenceText: evidence ? evidence.slice(0, 500) : undefined,
+    confidence,
+    status: 'pending',
+    importedAt: new Date(),
+  };
+}
+
+function buildSocialImportActivityExternalRefId(options = {}) {
+  const source = normalizeSocialImportSource(options.source, options.normalizedUrl || '');
+  const postId = String(options.postId || '').trim() || shortHash(options.normalizedUrl || '');
+  const labelSlug = slugify(options.label || 'activity').slice(0, 64);
+  return `${source}:${postId}:${labelSlug || shortHash(options.label || '')}`;
+}
+
+function normalizeSocialImportLabel(value = '') {
+  const label = String(value || '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/[@#]/g, '')
+    .replace(/[|•·]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[,.:;\-\s]+|[,.:;\-\s]+$/g, '');
+
+  if (label.length < 3 || label.length > 80) return '';
+
+  const blocked = new Set([
+    'instagram',
+    'tiktok',
+    'reels',
+    'reel',
+    'video',
+    'photo',
+    'share',
+    'travel',
+    'vacation',
+    'fyp',
+    'viral',
+    'explore',
+    'ibeento',
+  ]);
+  if (blocked.has(label.toLowerCase())) return '';
+  return label;
+}
+
+function extractSocialImportLabels(payload = {}) {
+  const seen = new Set();
+  const out = [];
+  const add = (label, source = 'text') => {
+    const cleaned = normalizeSocialImportLabel(label);
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ label: cleaned, source });
+  };
+
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      add(candidate, 'candidate');
+    } else if (candidate && typeof candidate === 'object') {
+      add(candidate.label || candidate.name || candidate.extractedName || '', candidate.source || 'candidate');
+    }
+  }
+
+  const text = String(payload?.text || '').trim();
+  if (text) {
+    for (const line of text.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+      const pinMatch = line.match(/(?:📍|location\s*:|place\s*:|at\s+)(.+)$/i);
+      if (pinMatch?.[1]) add(pinMatch[1], 'pin');
+
+      for (const part of line.split(/[|,;]+/).map((entry) => entry.trim()).filter(Boolean)) {
+        if (/^[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}$/u.test(part)) {
+          add(part, 'text');
+        }
+      }
+    }
+
+    const hashtagMatches = text.match(/#[\p{L}\p{N}_-]{3,}/gu) || [];
+    for (const tag of hashtagMatches) {
+      add(
+        tag
+          .replace(/^#/, '')
+          .replace(/[_-]+/g, ' ')
+          .replace(/([a-z])([A-Z])/g, '$1 $2'),
+        'hashtag'
+      );
+    }
+
+    const captionMatches = text.match(/\b[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}\b/gu) || [];
+    for (const match of captionMatches) add(match, 'caption');
+  }
+
+  return out.slice(0, 16);
+}
+
+function zoneTypePriority(zone = {}) {
+  const type = String(zone?.taxonomySnapshot?.canonicalType || zone?.type || '').trim().toLowerCase();
+  if (type === 'city') return 100;
+  if (type === 'town') return 94;
+  if (type === 'village') return 88;
+  if (type === 'locality') return 82;
+  if (type === 'district') return 76;
+  if (type === 'neighborhood' || type === 'subdistrict') return 70;
+  if (type === 'region' || type === 'province' || type === 'state') return 64;
+  if (type === 'country') return 58;
+  return 40;
+}
+
+async function findBestZoneForSocialImportTerm(term = '') {
+  const label = normalizeSocialImportLabel(term);
+  if (!label) return null;
+  const slug = slugify(label);
+  const exactName = new RegExp(`^${escapeRegExp(label)}$`, 'i');
+  const query = {
+    active: { $ne: false },
+    $or: [
+      { name: exactName },
+      { officialName: exactName },
+      ...(slug ? [{ slug }] : []),
+    ],
+  };
+
+  const rows = await Zone.find(query)
+    .select('_id name externalId taxonomySnapshot priority')
+    .limit(10)
+    .lean();
+  if (!rows.length) return null;
+
+  return rows
+    .slice()
+    .sort((a, b) => {
+      const typeDiff = zoneTypePriority(b) - zoneTypePriority(a);
+      if (typeDiff) return typeDiff;
+      return Number(b?.priority || 0) - Number(a?.priority || 0);
+    })[0] || null;
+}
+
+async function resolveSocialImportLocation(payload = {}) {
+  const explicitLocation = payload?.location || null;
+  const explicitId = normalizeObjectIdString(explicitLocation?._id || explicitLocation?.id);
+  if (explicitId) {
+    const zone = await Zone.findById(explicitId)
+      .select('_id name externalId taxonomySnapshot priority')
+      .lean();
+    if (zone?._id) {
+      return {
+        _id: String(zone._id),
+        type: String(zone?.taxonomySnapshot?.canonicalType || explicitLocation?.type || 'city'),
+        label: zone.name,
+      };
+    }
+  }
+
+  const labels = extractSocialImportLabels(payload);
+  const matches = [];
+  for (const item of labels) {
+    const zone = await findBestZoneForSocialImportTerm(item.label);
+    if (!zone?._id) continue;
+    matches.push(zone);
+  }
+
+  if (!matches.length) return null;
+  const selected = matches
+    .slice()
+    .sort((a, b) => {
+      const typeDiff = zoneTypePriority(b) - zoneTypePriority(a);
+      if (typeDiff) return typeDiff;
+      return Number(b?.priority || 0) - Number(a?.priority || 0);
+    })[0];
+
+  return {
+    _id: String(selected._id),
+    type: String(selected?.taxonomySnapshot?.canonicalType || 'city'),
+    label: selected.name,
+  };
+}
+
+function buildSocialSourceClaim(candidate = {}, externalRef = null, options = {}) {
+  const importOptions = options?.sourceClaim || {};
+  const source = normalizeSocialImportSource(importOptions.source, importOptions.url);
+  const externalId = String(candidate?.externalId || candidate?._preview?.placeId || '').trim();
+  const extractedName = String(candidate?._socialImport?.originalLabel || candidate?.name || '').trim();
+  const context = String(importOptions.text || '').trim();
+  const classMatched = !!candidate?._preview?.classMatched;
+  const confidence = externalRef?.provider === 'wikidata'
+    ? (classMatched ? 0.86 : 0.72)
+    : 0.55;
+
+  return {
+    source,
+    url: String(importOptions.url || '').trim() || undefined,
+    externalId: externalId || undefined,
+    extractedName: extractedName || undefined,
+    extractedContext: context ? context.slice(0, 500) : undefined,
+    evidenceText: String(candidate?.description || '').trim() || undefined,
+    confidence,
+    status: importOptions.status || 'pending',
+    importedAt: new Date(),
+  };
+}
+
+function hasEquivalentSourceClaim(activityDoc = {}, claim = {}) {
+  const claims = Array.isArray(activityDoc?.sourceClaims) ? activityDoc.sourceClaims : [];
+  const source = String(claim?.source || '').trim().toLowerCase();
+  const url = String(claim?.url || '').trim();
+  const externalId = String(claim?.externalId || '').trim();
+  const extractedName = String(claim?.extractedName || '').trim().toLowerCase();
+
+  return claims.some((existing) => {
+    const existingSource = String(existing?.source || '').trim().toLowerCase();
+    if (source && existingSource !== source) return false;
+    const existingUrl = String(existing?.url || '').trim();
+    const existingExternalId = String(existing?.externalId || '').trim();
+    const existingName = String(existing?.extractedName || '').trim().toLowerCase();
+    if (url && existingUrl && url === existingUrl && externalId && existingExternalId === externalId) return true;
+    if (url && existingUrl && url === existingUrl && extractedName && existingName === extractedName) return true;
+    if (!url && externalId && existingExternalId === externalId) return true;
+    return false;
+  });
 }
 
 // ===== Create =====
@@ -2082,14 +3609,6 @@ exports.create = async (req, res) => {
     // Active default true if not provided
     if (typeof data.active !== 'boolean') data.active = true;
 
-    const requiresTicket = !!data?.purchaseHint?.requiresTicket;
-    if (requiresTicket) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot enable "Requires ticket" when creating an activity. Create and link an active service first.',
-      });
-    }
-
     // Ensure slug + primaryZoneId not duplicated
     const existsSlug = await Activity.findOne({
       slug: data.slug,
@@ -2125,12 +3644,19 @@ exports.list = async (req, res) => {
       bookable,
       minPrice,
       maxPrice,
+      accessRequirement,
+      mediaStatus,
+      sourceClaims,
       limit = 50,
       offset = 0,
       sort // e.g. "priority:asc,ratingAvg:desc"
     } = req.query;
 
     const filter = {};
+    const andFilters = [];
+    const addAndFilter = (condition) => {
+      if (condition && typeof condition === 'object') andFilters.push(condition);
+    };
 
     if (q) {
       const re = new RegExp(String(q).trim(), 'i');
@@ -2177,6 +3703,70 @@ exports.list = async (req, res) => {
     if (active === 'true')  filter.active = true;
     if (active === 'false') filter.active = false;
 
+    if (accessRequirement) {
+      const allowedRequirements = new Set([
+        'unknown',
+        'free',
+        'ticket_required',
+        'reservation_required',
+        'reservation_recommended',
+        'pay_on_site',
+        'guided_service_available',
+      ]);
+      const requirements = String(accessRequirement)
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => allowedRequirements.has(entry));
+      if (requirements.length) {
+        filter['accessHint.requirement'] = requirements.length === 1
+          ? requirements[0]
+          : { $in: Array.from(new Set(requirements)) };
+      }
+    }
+
+    if (mediaStatus) {
+      const normalizedMediaStatus = String(mediaStatus).trim();
+      if (normalizedMediaStatus === 'missing_images') {
+        addAndFilter({
+          $expr: {
+            $lt: [{ $size: { $ifNull: ['$media.images', []] } }, 10],
+          },
+        });
+      } else if (normalizedMediaStatus === 'has_images') {
+        addAndFilter({
+          $expr: {
+            $gt: [{ $size: { $ifNull: ['$media.images', []] } }, 0],
+          },
+        });
+      } else if (normalizedMediaStatus === 'no_cover') {
+        addAndFilter({
+          $or: [
+            { 'media.cover': { $exists: false } },
+            { 'media.cover': null },
+            { 'media.cover': '' },
+          ],
+        });
+      } else if (normalizedMediaStatus === 'has_cover') {
+        filter['media.cover'] = { $exists: true, $nin: [null, ''] };
+      }
+    }
+
+    if (sourceClaims) {
+      const normalizedSourceClaims = String(sourceClaims).trim().toLowerCase();
+      if (normalizedSourceClaims === 'social') {
+        addAndFilter({
+          'sourceClaims.source': { $in: SOCIAL_SOURCE_CLAIM_VALUES },
+        });
+      } else if (normalizedSourceClaims === 'none') {
+        addAndFilter({
+          $or: [
+            { sourceClaims: { $exists: false } },
+            { sourceClaims: { $size: 0 } },
+          ],
+        });
+      }
+    }
+
     if (tags) {
       const arr = String(tags)
         .split(',')
@@ -2197,7 +3787,8 @@ exports.list = async (req, res) => {
     const priceFilter = {};
     if (minPrice !== undefined) priceFilter.$gte = Number(minPrice);
     if (maxPrice !== undefined) priceFilter.$lte = Number(maxPrice);
-    if (Object.keys(priceFilter).length) filter.priceFrom = priceFilter;
+    if (Object.keys(priceFilter).length) filter['accessHint.priceIndication.priceFrom'] = priceFilter;
+    if (andFilters.length) filter.$and = andFilters;
 
     // Sorting
     let sortDoc = { 'ranking.priority': 1, 'createdAt': 1 };
@@ -2211,7 +3802,11 @@ exports.list = async (req, res) => {
           rating: 'ranking.ratingAvg',
           reviews: 'ranking.reviewsCount',
           createdAt: 'createdAt',
-          priceFrom: 'priceFrom'
+          updatedAt: 'updatedAt',
+          active: 'active',
+          audit: 'audit.isAudited',
+          name: 'name',
+          priceFrom: 'accessHint.priceIndication.priceFrom'
         };
         const mapped = keyMap[k.trim()] || k.trim();
         sortDoc[mapped] = (dir && dir.trim().toLowerCase() === 'desc') ? -1 : 1;
@@ -2238,20 +3833,40 @@ exports.list = async (req, res) => {
       .map((id) => new mongoose.Types.ObjectId(id));
 
     let serviceCountByActivityId = new Map();
+    let socialImportStatsByActivityId = new Map();
     if (activityObjectIds.length) {
-      const counts = await Service.aggregate([
-        {
-          $match: {
-            activityId: { $in: activityObjectIds },
-            isActive: true,
+      const [counts, socialImportStats] = await Promise.all([
+        Service.aggregate([
+          {
+            $match: {
+              activityId: { $in: activityObjectIds },
+              isActive: true,
+            },
           },
-        },
-        {
-          $group: {
-            _id: '$activityId',
-            total: { $sum: 1 },
+          {
+            $group: {
+              _id: '$activityId',
+              total: { $sum: 1 },
+            },
           },
-        },
+        ]),
+        SocialImportLink.aggregate([
+          { $unwind: '$resolvedActivities' },
+          {
+            $match: {
+              'resolvedActivities.activityId': { $in: activityObjectIds },
+            },
+          },
+          {
+            $group: {
+              _id: '$resolvedActivities.activityId',
+              linkCount: { $sum: 1 },
+              shareCount: { $sum: '$usage.shareCount' },
+              uniqueUserCount: { $sum: '$usage.uniqueUserCount' },
+              lastSharedAt: { $max: '$usage.lastSharedAt' },
+            },
+          },
+        ]),
       ]);
       serviceCountByActivityId = new Map(
         (Array.isArray(counts) ? counts : []).map((row) => [
@@ -2259,11 +3874,23 @@ exports.list = async (req, res) => {
           Number(row?.total || 0),
         ])
       );
+      socialImportStatsByActivityId = new Map(
+        (Array.isArray(socialImportStats) ? socialImportStats : []).map((row) => [
+          String(row?._id || '').trim(),
+          {
+            linkCount: Number(row?.linkCount || 0),
+            shareCount: Number(row?.shareCount || 0),
+            uniqueUserCount: Number(row?.uniqueUserCount || 0),
+            lastSharedAt: row?.lastSharedAt || null,
+          },
+        ])
+      );
     }
 
     const enrichedResults = (Array.isArray(results) ? results : []).map((row) => ({
       ...row,
       serviceCount: serviceCountByActivityId.get(String(row?._id || '').trim()) || 0,
+      socialImportStats: socialImportStatsByActivityId.get(String(row?._id || '').trim()) || undefined,
     }));
 
     return res.status(200).json({ success: true, data: enrichedResults, total, limit: lim, offset: off });
@@ -2295,7 +3922,7 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const data = { ...req.body };
-    const current = await Activity.findById(id).select('purchaseHint ownership externalRef').lean();
+    const current = await Activity.findById(id).select('ownership externalRef').lean();
     if (!current) return res.status(404).json({ success: false, message: 'Activity not found' });
 
     const writeAccess = await resolveActivityWriteAccess({ ...current, _id: id }, req);
@@ -2421,24 +4048,6 @@ exports.update = async (req, res) => {
       if (existsSlug) return res.status(409).json({ success: false, message: 'Slug already exists for Activity' });
     }
 
-    let finalRequiresTicket = !!current?.purchaseHint?.requiresTicket;
-    if (
-      data?.purchaseHint &&
-      Object.prototype.hasOwnProperty.call(data.purchaseHint, 'requiresTicket')
-    ) {
-      finalRequiresTicket = !!data.purchaseHint.requiresTicket;
-    }
-
-    if (finalRequiresTicket) {
-      const hasActiveService = await hasActiveLinkedService(id);
-      if (!hasActiveService) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot enable "Requires ticket" without at least one active linked service for this activity.',
-        });
-      }
-    }
-
     const updated = await Activity.findByIdAndUpdate(id, data, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ success: false, message: 'Activity not found' });
 
@@ -2540,6 +4149,82 @@ exports.acquireOwnership = async (req, res) => {
     const status = Number(error?.status) || 500;
     const message = String(error?.message || '').trim() || 'Failed to acquire activity ownership';
     return res.status(status).json({ success: false, message });
+  }
+};
+
+exports.acceptImportedActivity = async (req, res) => {
+  try {
+    const activityId = normalizeObjectIdString(req?.params?.id);
+    if (!activityId) {
+      return res.status(400).json({ success: false, message: 'Invalid activity id' });
+    }
+
+    const current = await Activity.findById(activityId).select('_id ownership sourceClaims name nameSource location googleCache').lean();
+    if (!current?._id) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    const writeAccess = await resolveActivityWriteAccess(current, req);
+    if (!writeAccess.allowed) {
+      return res.status(403).json({ success: false, message: writeAccess.reason || 'Forbidden' });
+    }
+
+    if (!hasSocialSourceClaim(current)) {
+      return res.status(400).json({
+        success: false,
+        message: 'This activity does not have a social import source claim.',
+      });
+    }
+
+    if (!activityHasCanonicalData(current)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete the canonical name, address, and coordinates before accepting this imported activity.',
+      });
+    }
+
+    const now = new Date();
+    const reviewerId = normalizeObjectIdString(req?.user?._id || req?.user?.id);
+    const update = {
+      $set: {
+        active: true,
+        visibility: 'public',
+        'audit.isAudited': true,
+        'audit.status': 'approved',
+        'audit.auditedAt': now,
+      },
+    };
+    if (reviewerId) {
+      update.$set['audit.auditedBy'] = reviewerId;
+    }
+
+    const updated = await Activity.findOneAndUpdate(
+      { _id: activityId, 'sourceClaims.source': { $in: SOCIAL_SOURCE_CLAIM_VALUES } },
+      {
+        ...update,
+        $set: {
+          ...update.$set,
+          'sourceClaims.$[claim].status': 'accepted',
+          'sourceClaims.$[claim].reviewedAt': now,
+          ...(reviewerId ? { 'sourceClaims.$[claim].reviewedBy': reviewerId } : {}),
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+        arrayFilters: [{ 'claim.source': { $in: SOCIAL_SOURCE_CLAIM_VALUES } }],
+      }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
+    }
+
+    return res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    console.error('Error accepting imported Activity:', error);
+    const message = String(error?.message || '').trim() || 'Failed to accept imported Activity';
+    return res.status(500).json({ success: false, message, error });
   }
 };
 
@@ -2696,3 +4381,5 @@ exports.remove = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to delete Activity', error });
   }
 };
+
+exports.startDiscoverPreviewPersistentWorker = startDiscoverPreviewPersistentWorker;

@@ -18,24 +18,265 @@ function setRefreshCookie(res, refreshToken) {
   });
 }
 
+function safeString(value, maxLength = 240) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function clampNumber(value, { min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY, fallback = null } = {}) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function normalizeOnboardingSelectionMode(value) {
+  return safeString(value, 16).toLowerCase() === 'single' ? 'single' : 'multiple';
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeOnboardingOption(rawOption) {
+  const id = safeString(rawOption?.id, 80);
+  if (!id) return null;
+  return {
+    id,
+    label: safeString(rawOption?.label, 160),
+  };
+}
+
+function normalizeOnboardingStep(rawStep, fallbackIndex = 1) {
+  const stepId = safeString(rawStep?.stepId, 80);
+  if (!stepId) return null;
+
+  const stepIndex = clampNumber(rawStep?.stepIndex, {
+    min: 1,
+    max: 200,
+    fallback: fallbackIndex,
+  });
+
+  const options = [];
+  const optionIds = new Set();
+  if (Array.isArray(rawStep?.options)) {
+    for (const rawOption of rawStep.options.slice(0, 24)) {
+      const option = normalizeOnboardingOption(rawOption);
+      if (!option || optionIds.has(option.id)) continue;
+      optionIds.add(option.id);
+      options.push(option);
+    }
+  }
+
+  const selectedOptionIds = [];
+  const selectedSeen = new Set();
+  if (Array.isArray(rawStep?.selectedOptionIds)) {
+    for (const rawOptionId of rawStep.selectedOptionIds.slice(0, 24)) {
+      const optionId = safeString(rawOptionId, 80);
+      if (!optionId || selectedSeen.has(optionId)) continue;
+      if (optionIds.size > 0 && !optionIds.has(optionId)) continue;
+      selectedSeen.add(optionId);
+      selectedOptionIds.push(optionId);
+    }
+  }
+
+  return {
+    stepId,
+    stepIndex,
+    title: safeString(rawStep?.title, 180),
+    selectionMode: normalizeOnboardingSelectionMode(rawStep?.selectionMode),
+    options,
+    selectedOptionIds,
+  };
+}
+
+function sanitizeOnboardingPreferences(rawPreferences) {
+  if (!rawPreferences || typeof rawPreferences !== 'object' || Array.isArray(rawPreferences)) return null;
+
+  const sessionId = safeString(rawPreferences?.sessionId, 140);
+  if (!sessionId) return null;
+
+  const questionSteps = [];
+  if (Array.isArray(rawPreferences?.questionSteps)) {
+    for (let index = 0; index < Math.min(rawPreferences.questionSteps.length, 40); index += 1) {
+      const step = normalizeOnboardingStep(rawPreferences.questionSteps[index], index + 1);
+      if (!step) continue;
+      questionSteps.push(step);
+    }
+  }
+
+  const startHour = clampNumber(rawPreferences?.activityWindow?.startHour, {
+    min: 0,
+    max: 24,
+    fallback: 9,
+  });
+  const endHour = clampNumber(rawPreferences?.activityWindow?.endHour, {
+    min: 0,
+    max: 24,
+    fallback: 20,
+  });
+  const normalizedStartHour = Math.min(startHour, endHour);
+  const normalizedEndHour = Math.max(startHour, endHour);
+  const fallbackDuration = Math.round((normalizedEndHour - normalizedStartHour) * 2) / 2;
+
+  return {
+    flowVersion: safeString(rawPreferences?.flowVersion, 24) || 'v1',
+    sessionId,
+    activeStepIndex: clampNumber(rawPreferences?.activeStepIndex, {
+      min: 1,
+      max: 200,
+      fallback: 1,
+    }),
+    totalSteps: clampNumber(rawPreferences?.totalSteps, {
+      min: 1,
+      max: 200,
+      fallback: Math.max(questionSteps.length, 1),
+    }),
+    completed: !!rawPreferences?.completed,
+    paceValue: clampNumber(rawPreferences?.paceValue, {
+      min: 1,
+      max: 10,
+      fallback: 5,
+    }),
+    activityWindow: {
+      startHour: normalizedStartHour,
+      endHour: normalizedEndHour,
+      durationHours: clampNumber(rawPreferences?.activityWindow?.durationHours, {
+        min: 0,
+        max: 24,
+        fallback: fallbackDuration,
+      }),
+    },
+    questionSteps,
+    updatedAt: new Date(),
+  };
+}
+
+function deriveTripPreferencesFromOnboarding(onboardingPreferences) {
+  if (!onboardingPreferences) return null;
+
+  const patch = {};
+  const paceValue = clampNumber(onboardingPreferences?.paceValue, {
+    min: 1,
+    max: 10,
+    fallback: null,
+  });
+
+  if (paceValue !== null) {
+    if (paceValue <= 3) patch.pace = 'slow';
+    else if (paceValue >= 8) patch.pace = 'packed';
+    else patch.pace = 'balanced';
+  }
+
+  const companionsStep = Array.isArray(onboardingPreferences?.questionSteps)
+    ? onboardingPreferences.questionSteps.find((step) => safeString(step?.stepId, 80) === 'new-travel-companions')
+    : null;
+  const companionSelection = safeString(companionsStep?.selectedOptionIds?.[0], 80);
+  const typeByCompanionSelection = {
+    'companions-solo': 'solo',
+    'companions-partner': 'romantic',
+    'companions-friends': 'friends',
+    'companions-family': 'family',
+  };
+  const mappedType = typeByCompanionSelection[companionSelection];
+  if (mappedType) patch.type = [mappedType];
+
+  const windowStartHour = clampNumber(onboardingPreferences?.activityWindow?.startHour, {
+    min: 0,
+    max: 24,
+    fallback: null,
+  });
+  const windowEndHour = clampNumber(onboardingPreferences?.activityWindow?.endHour, {
+    min: 0,
+    max: 24,
+    fallback: null,
+  });
+  const windowDurationHours = clampNumber(onboardingPreferences?.activityWindow?.durationHours, {
+    min: 0,
+    max: 24,
+    fallback: null,
+  });
+  if (windowStartHour !== null && windowEndHour !== null) {
+    const startHour = Math.min(windowStartHour, windowEndHour);
+    const endHour = Math.max(windowStartHour, windowEndHour);
+    const fallbackDuration = Math.round((endHour - startHour) * 2) / 2;
+    patch.timeWindow = {
+      startHour,
+      endHour,
+      durationHours: windowDurationHours !== null ? windowDurationHours : fallbackDuration,
+    };
+  }
+
+  return Object.keys(patch).length ? patch : null;
+}
+
+function applyOnboardingPreferencesToUser(user, onboardingPreferences) {
+  if (!user || !onboardingPreferences) return;
+
+  const currentPreferences = typeof user.preferences?.toObject === 'function'
+    ? user.preferences.toObject()
+    : (isPlainObject(user.preferences) ? { ...user.preferences } : {});
+
+  if (Object.prototype.hasOwnProperty.call(currentPreferences, 'onboarding')) {
+    delete currentPreferences.onboarding;
+  }
+  user.onboarding = onboardingPreferences;
+
+  const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
+  if (tripPreferencePatch) {
+    const safeCurrentTripPreferences = isPlainObject(currentPreferences.trip)
+      ? currentPreferences.trip
+      : {};
+    currentPreferences.trip = {
+      ...safeCurrentTripPreferences,
+      ...tripPreferencePatch,
+    };
+  }
+
+  user.preferences = currentPreferences;
+  if (typeof user.markModified === 'function') {
+    user.markModified('onboarding');
+    user.markModified('preferences');
+  }
+}
+
 exports.register = async (req, res, next) => {
   try {
-    const { email, password, name, phone, nationality, document, onboardingCompleted } = req.body;
+    const {
+      email,
+      password,
+      name,
+      phone,
+      nationality,
+      document,
+      onboardingCompleted,
+      onboardingPreferences: rawOnboardingPreferences,
+    } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'email and password are required' });
 
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ message: 'Email already registered' });
 
+    const onboardingPreferences = sanitizeOnboardingPreferences(rawOnboardingPreferences);
+    const resolvedOnboardingCompleted = !!onboardingCompleted || !!onboardingPreferences?.completed;
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-    const user = await User.create({
+    const userPayload = {
       email,
       passwordHash,
       name,
       phone,
       nationality,
       document,
-      onboardingCompleted: !!onboardingCompleted,
-    });
+      onboardingCompleted: resolvedOnboardingCompleted,
+    };
+    if (onboardingPreferences) {
+      userPayload.onboarding = onboardingPreferences;
+      const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
+      if (tripPreferencePatch) {
+        userPayload.preferences = userPayload.preferences || {};
+        userPayload.preferences.trip = tripPreferencePatch;
+      }
+    }
+
+    const user = await User.create(userPayload);
 
     try {
       await sendTemplatedEmail({
@@ -172,18 +413,30 @@ exports.me = async (req, res) => {
 
 exports.google = async (req, res, next) => {
   try {
-    const { uid, email, name, photo, onboardingCompleted } = req.body;
+    const { uid, email, name, photo, onboardingCompleted, onboardingPreferences: rawOnboardingPreferences } = req.body;
     if (!uid || !email) return res.status(400).json({ message: 'uid and email are required' });
 
+    const onboardingPreferences = sanitizeOnboardingPreferences(rawOnboardingPreferences);
+    const resolvedOnboardingCompleted = !!onboardingCompleted || !!onboardingPreferences?.completed;
     let user = await User.findOne({ email });
     if (!user) {
-      user = await User.create({
+      const userPayload = {
         email,
         name,
         photo,
-        onboardingCompleted: !!onboardingCompleted,
+        onboardingCompleted: resolvedOnboardingCompleted,
         providers: [{ provider: 'google', providerId: uid }]
-      });
+      };
+      if (onboardingPreferences) {
+        userPayload.onboarding = onboardingPreferences;
+        const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
+        if (tripPreferencePatch) {
+          userPayload.preferences = userPayload.preferences || {};
+          userPayload.preferences.trip = tripPreferencePatch;
+        }
+      }
+
+      user = await User.create(userPayload);
 
       try {
         await sendTemplatedEmail({
@@ -198,13 +451,110 @@ exports.google = async (req, res, next) => {
       user.lastLoginAt = new Date();
       if (name) user.name = name;
       if (photo) user.photo = photo;
-      if (onboardingCompleted && !user.onboardingCompleted) {
+      if (resolvedOnboardingCompleted && !user.onboardingCompleted) {
         user.onboardingCompleted = true;
+      }
+      if (onboardingPreferences) {
+        applyOnboardingPreferencesToUser(user, onboardingPreferences);
       }
 
       const hasGoogle = user.providers?.some(p => p.provider === 'google' && p.providerId === uid);
       if (!hasGoogle) {
         user.providers.push({ provider: 'google', providerId: uid });
+      }
+      await user.save();
+    }
+
+    const { token: refreshToken } = signRefreshToken({ sub: user._id.toString() });
+    const refreshTokenHash = await hashValue(refreshToken);
+    const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 86400 * 1000);
+
+    await Session.create({
+      userId: user._id,
+      refreshTokenHash,
+      userAgent: req.get('user-agent') || '',
+      ip: req.ip || '',
+      expiresAt
+    });
+
+    setRefreshCookie(res, refreshToken);
+    const accessToken = signAccessToken(user);
+    res.json({
+      accessToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        isPro: !!user.isPro,
+        photo: user.photo,
+        providers: user.providers,
+        onboardingCompleted: user.onboardingCompleted,
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.apple = async (req, res, next) => {
+  try {
+    const { uid, email, name, photo, onboardingCompleted, onboardingPreferences: rawOnboardingPreferences } = req.body;
+    if (!uid) return res.status(400).json({ message: 'uid is required' });
+
+    const onboardingPreferences = sanitizeOnboardingPreferences(rawOnboardingPreferences);
+    const resolvedOnboardingCompleted = !!onboardingCompleted || !!onboardingPreferences?.completed;
+    let user = await User.findOne({
+      providers: { $elemMatch: { provider: 'apple', providerId: uid } }
+    });
+    if (!user && email) {
+      user = await User.findOne({ email });
+    }
+    if (!user) {
+      if (!email) {
+        return res.status(400).json({ message: 'email is required the first time you sign in with Apple' });
+      }
+      const userPayload = {
+        email,
+        name,
+        photo,
+        onboardingCompleted: resolvedOnboardingCompleted,
+        providers: [{ provider: 'apple', providerId: uid }]
+      };
+      if (onboardingPreferences) {
+        userPayload.onboarding = onboardingPreferences;
+        const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
+        if (tripPreferencePatch) {
+          userPayload.preferences = userPayload.preferences || {};
+          userPayload.preferences.trip = tripPreferencePatch;
+        }
+      }
+
+      user = await User.create(userPayload);
+
+      try {
+        await sendTemplatedEmail({
+          to: user.email,
+          templateKey: 'welcome',
+          data: { name: user.name },
+        });
+      } catch (emailErr) {
+        console.error('[auth.apple] welcome email failed', emailErr?.message || emailErr);
+      }
+    } else {
+      user.lastLoginAt = new Date();
+      if (name) user.name = name;
+      if (photo) user.photo = photo;
+      if (resolvedOnboardingCompleted && !user.onboardingCompleted) {
+        user.onboardingCompleted = true;
+      }
+      if (onboardingPreferences) {
+        applyOnboardingPreferencesToUser(user, onboardingPreferences);
+      }
+
+      const hasApple = user.providers?.some(p => p.provider === 'apple' && p.providerId === uid);
+      if (!hasApple) {
+        user.providers.push({ provider: 'apple', providerId: uid });
       }
       await user.save();
     }

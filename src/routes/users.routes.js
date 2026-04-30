@@ -7,6 +7,7 @@ const authAdmin = require('../middlewares/authAdmin');
 const rejectSensitiveBodyFields = require('../middlewares/rejectSensitiveBodyFields');
 
 router.get('/me', auth, userController.me); // Get current authenticated user
+router.delete('/me', auth, userController.removeMe); // Self: permanent account deletion
 
 router.put('/preferences', auth, rejectSensitiveBodyFields, userController.updatePreferences); // Update preferences
 

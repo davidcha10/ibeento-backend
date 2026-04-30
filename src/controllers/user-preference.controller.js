@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 const UserPreference = require('../models/UserPreference');
 
+const ALLOWED_TRANSPORT_PRIORITIES = new Set([
+  'velocity',
+  'cost',
+  'comfort',
+  'balanced',
+]);
+
 /**
  * Get preferences for the authenticated user (or explicit userId for testing).
  * GET /api/user-preferences/me
@@ -96,19 +103,23 @@ exports.upsertMyPreferences = async (req, res) => {
       const tp = {};
 
       if (Array.isArray(transportPreference.methods)) {
-        tp.methods = transportPreference.methods;
+        tp.methods = transportPreference.methods
+          .map((method) => String(method || '').trim())
+          .filter(Boolean);
       }
 
-      if (
-        typeof transportPreference.priority === 'string' &&
-        ['velocity', 'cost', 'comfort'].includes(
-          transportPreference.priority
-        )
-      ) {
-        tp.priority = transportPreference.priority;
+      if (typeof transportPreference.priority === 'string') {
+        const normalizedPriority = String(transportPreference.priority || '')
+          .trim()
+          .toLowerCase();
+        if (ALLOWED_TRANSPORT_PRIORITIES.has(normalizedPriority)) {
+          tp.priority = normalizedPriority;
+        }
       }
 
-      update.transportPreference = tp;
+      if (Object.keys(tp).length) {
+        update.transportPreference = tp;
+      }
     }
 
     if (Array.isArray(foodRestrictions)) {

@@ -1,9 +1,11 @@
 const { generateItineraryResponse } = require('../services/gemini.service');
 const AI_LOG_PREFIX = '[AI][controller]';
-const AI_SELECTED_ACTIVITIES_CAP = Number(process.env.AI_SELECTED_ACTIVITIES_CAP || 24);
+const AI_SELECTED_ACTIVITIES_PER_DAY_CAP = Number(process.env.AI_SELECTED_ACTIVITIES_PER_DAY_CAP || 10);
+const AI_SELECTED_ACTIVITIES_CAP_MAX = Number(process.env.AI_SELECTED_ACTIVITIES_CAP_MAX || 200);
 const AI_EXECUTION_ENABLED = String(process.env.AI_EXECUTION_ENABLED || 'true').toLowerCase() === 'true';
 const AI_MIN_ACTIVITIES_PER_DAY = Number(process.env.AI_MIN_ACTIVITIES_PER_DAY || 2);
 const AI_MIN_OCCUPIED_MINUTES_PER_DAY = Number(process.env.AI_MIN_OCCUPIED_MINUTES_PER_DAY || 240);
+const AI_WINDOW_OVERFLOW_TOLERANCE_MIN = Number(process.env.AI_WINDOW_OVERFLOW_TOLERANCE_MIN || 30);
 const DEFAULT_WAKE_TIME = '08:00';
 const DEFAULT_SLEEP_TIME = '22:00';
 const DEFAULT_ACTIVITY_DURATION_MIN = 90;
@@ -37,6 +39,79 @@ function toNumberOrNull(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function computeAverageActivityDurationMinutes(activities = [], fallback = DEFAULT_ACTIVITY_DURATION_MIN) {
+  const durations = (Array.isArray(activities) ? activities : [])
+    .map((activity) => getActivityDurationMin(activity))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!durations.length) return fallback;
+  const avg = durations.reduce((sum, value) => sum + value, 0) / durations.length;
+  return clamp(Math.round(avg), MIN_ACTIVITY_DURATION_MIN, 240);
+}
+
+function derivePaceTargets(rawPace, context = {}) {
+  const parsed = toNumberOrNull(rawPace);
+  const pace = clamp(Math.round(parsed == null ? 5 : parsed), 1, 10);
+  const paceRatio = (pace - 1) / 9;
+
+  const dayWindowMinutesRaw = toNumberOrNull(context?.dayWindowMinutes);
+  const dayWindowMinutes = clamp(
+    Math.round(dayWindowMinutesRaw == null ? (14 * 60) : dayWindowMinutesRaw),
+    6 * 60,
+    16 * 60,
+  );
+
+  const referenceDurationMinutes = clamp(
+    Math.round(toNumberOrNull(context?.avgDurationMinutes) || DEFAULT_ACTIVITY_DURATION_MIN),
+    MIN_ACTIVITY_DURATION_MIN,
+    240,
+  );
+
+  // Pace is mapped to desired occupancy ratio, not fixed activity count tiers.
+  const desiredOccupancyRatio = clamp(0.38 + (paceRatio * 0.42), 0.35, 0.82);
+  const targetOccupiedMinutesPerDay = clamp(
+    Math.round(dayWindowMinutes * desiredOccupancyRatio),
+    120,
+    dayWindowMinutes,
+  );
+
+  const floorByWindow = Math.max(120, Math.round(dayWindowMinutes * 0.4));
+  const minOccupiedMinutesPerDay = Math.max(
+    Math.min(AI_MIN_OCCUPIED_MINUTES_PER_DAY, dayWindowMinutes),
+    Math.round(targetOccupiedMinutesPerDay * 0.72),
+    floorByWindow,
+  );
+
+  const preferredActivitiesPerDay = clamp(
+    Math.round(targetOccupiedMinutesPerDay / referenceDurationMinutes),
+    2,
+    7,
+  );
+  const minActivitiesPerDay = clamp(
+    Math.max(AI_MIN_ACTIVITIES_PER_DAY, preferredActivitiesPerDay - 1),
+    2,
+    preferredActivitiesPerDay,
+  );
+
+  const maxActivitiesPerDay = clamp(
+    preferredActivitiesPerDay + (paceRatio >= 0.66 ? 2 : 1),
+    preferredActivitiesPerDay,
+    8,
+  );
+
+  return {
+    pace,
+    paceRatio: Number(paceRatio.toFixed(3)),
+    desiredOccupancyRatio: Number(desiredOccupancyRatio.toFixed(3)),
+    dayWindowMinutes,
+    referenceDurationMinutes,
+    minActivitiesPerDay,
+    preferredActivitiesPerDay,
+    maxActivitiesPerDay,
+    minOccupiedMinutesPerDay,
+    targetOccupiedMinutesPerDay,
+  };
 }
 
 function dayKeyFromIso(iso) {
@@ -124,7 +199,101 @@ function getDateRangeDays(startIso, endIso) {
   return out;
 }
 
-function buildSelectedActivitiesForAi(aiInput = {}) {
+function normalizeGenerationScope(rawScope = {}, aiInput = {}) {
+  const scopeRaw = String(rawScope?.scope || '').trim().toLowerCase();
+  const scope = scopeRaw === 'selected_day' ? 'selected_day' : 'whole_trip';
+  const tripDays = getDateRangeDays(aiInput?.tripContext?.startDate, aiInput?.tripContext?.endDate);
+  let targetDayYmd = null;
+
+  if (scope === 'selected_day') {
+    const candidate = String(rawScope?.targetDayYmd || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(candidate) && (!tripDays.length || tripDays.includes(candidate))) {
+      targetDayYmd = candidate;
+    } else if (tripDays.length) {
+      targetDayYmd = tripDays[0];
+    }
+  }
+
+  return { scope, targetDayYmd };
+}
+
+function rebaseIsoToDayKeepingUtcMinutes(rawIso, targetDayYmd) {
+  const minutes = isoToUtcMinutes(rawIso);
+  if (minutes == null || !targetDayYmd) return null;
+  return withUtcMinutes(targetDayYmd, minutes);
+}
+
+function applySelectedDayScopeToAction(action = {}, targetDayYmd) {
+  if (!action || !targetDayYmd) return action;
+  const type = String(action?.type || '').trim();
+  if (type === 'remove_activity') return action;
+
+  const startIso = normalizeIsoOrNull(action?.timelineStartDate);
+  if (!startIso) return action;
+
+  const rebasedStartIso = rebaseIsoToDayKeepingUtcMinutes(startIso, targetDayYmd);
+  if (!rebasedStartIso) return action;
+
+  const next = {
+    ...action,
+    timelineStartDate: rebasedStartIso,
+  };
+
+  const endIso = normalizeIsoOrNull(action?.timelineEndDate);
+  if (!endIso) return next;
+
+  const startMin = isoToUtcMinutes(startIso);
+  const endMin = isoToUtcMinutes(endIso);
+  if (startMin == null || endMin == null) {
+    const rebasedEndIso = rebaseIsoToDayKeepingUtcMinutes(endIso, targetDayYmd);
+    if (rebasedEndIso) next.timelineEndDate = rebasedEndIso;
+    return next;
+  }
+
+  const rebasedStartMin = isoToUtcMinutes(rebasedStartIso);
+  if (rebasedStartMin == null) return next;
+
+  const durationMin = Math.max(endMin - startMin, MIN_ACTIVITY_DURATION_MIN);
+  const rebasedEndMin = clamp(rebasedStartMin + durationMin, rebasedStartMin + MIN_ACTIVITY_DURATION_MIN, 24 * 60 - 1);
+  const rebasedEndIso = withUtcMinutes(targetDayYmd, rebasedEndMin);
+  if (rebasedEndIso) next.timelineEndDate = rebasedEndIso;
+  return next;
+}
+
+function actionTouchesSelectedDay(action = {}, targetDayYmd, selectedItemIds = new Set(), selectedActivityIds = new Set()) {
+  if (!targetDayYmd) return true;
+  const type = String(action?.type || '').trim();
+  if (type === 'add_activity') {
+    return dayKeyFromIso(action?.timelineStartDate) === targetDayYmd;
+  }
+  const itineraryItemId = String(action?.itineraryItemId || '').trim();
+  if (itineraryItemId && selectedItemIds.size) {
+    return selectedItemIds.has(itineraryItemId);
+  }
+  const activityId = String(action?.activityId || '').trim();
+  if (activityId && selectedActivityIds.size) {
+    return selectedActivityIds.has(activityId);
+  }
+  const day = dayKeyFromIso(action?.timelineStartDate);
+  return !!day && day === targetDayYmd;
+}
+
+function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
+  const WEIGHTS = {
+    favorite: 0.35,
+    priority: 0.30,
+    rating: 0.25,
+    categoryMatch: 0.10,
+  };
+  const scope = options?.generationScope?.scope === 'selected_day' ? 'selected_day' : 'whole_trip';
+  const targetDayYmd = scope === 'selected_day'
+    ? String(options?.generationScope?.targetDayYmd || '').trim()
+    : '';
+  const tripDaysAll = getDateRangeDays(aiInput?.tripContext?.startDate, aiInput?.tripContext?.endDate);
+  const generatedDayCount = scope === 'selected_day'
+    ? 1
+    : Math.max(1, tripDaysAll.length);
+
   const allActivities = Array.isArray(aiInput?.activities) ? aiInput.activities : [];
   const itineraryItems = Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [];
   const favoriteIds = new Set(
@@ -145,6 +314,10 @@ function buildSelectedActivitiesForAi(aiInput = {}) {
       .map((it) => String(it?.activityId || '').trim())
       .filter(Boolean)
   );
+  const itineraryActivityIdsOrdered = itineraryItems
+    .map((it) => String(it?.activityId || '').trim())
+    .filter(Boolean)
+    .filter((id, idx, arr) => arr.indexOf(id) === idx);
 
   const placeTypeSet = new Set(
     (Array.isArray(aiInput?.tripContext?.visitPlaces) ? aiInput.tripContext.visitPlaces : [])
@@ -154,14 +327,28 @@ function buildSelectedActivitiesForAi(aiInput = {}) {
 
   const normalized = allActivities.map((a) => {
     const id = String(a?._id || '').trim();
-    const priority = toNumberOrNull(a?.ranking?.priority) ?? 0;
+    const priorityRaw = toNumberOrNull(a?.ranking?.priority) ?? 0;
+    const ratingRaw = toNumberOrNull(a?.ranking?.ratingAvg) ?? 0;
     const categoryIds = [
       String(a?.activityCategoryId || '').trim(),
       ...(Array.isArray(a?.activityCategoryIds) ? a.activityCategoryIds.map((x) => String(x || '').trim()) : []),
     ].filter(Boolean);
-    const categoryWeight = categoryIds.reduce((acc, cid) => acc + (topCategoryWeights.get(cid) || 0), 0);
+    const categoryMatchRaw = categoryIds.length
+      ? Math.max(...categoryIds.map((cid) => Number(topCategoryWeights.get(cid) || 0)))
+      : 0;
     const inItinerary = itineraryActivityIds.has(id);
     const isFavorite = favoriteIds.has(id);
+
+    const favoriteScore = isFavorite ? 1 : 0;
+    const priorityScore = clamp(priorityRaw, 0, 100) / 100;
+    const ratingScore = clamp(ratingRaw, 0, 5) / 5;
+    const categoryMatchScore = clamp(categoryMatchRaw, 0, 1);
+
+    const weightedScore =
+      (favoriteScore * WEIGHTS.favorite) +
+      (priorityScore * WEIGHTS.priority) +
+      (ratingScore * WEIGHTS.rating) +
+      (categoryMatchScore * WEIGHTS.categoryMatch);
 
     const location = a?.location && typeof a.location === 'object' ? a.location : {};
     const scopedLocation = {};
@@ -174,40 +361,65 @@ function buildSelectedActivitiesForAi(aiInput = {}) {
       else if (location.countryId) scopedLocation.countryId = location.countryId;
     }
 
-    const score =
-      (isFavorite ? 200 : 0) +
-      (inItinerary ? 140 : 0) +
-      categoryWeight * 120 +
-      clamp(priority, 0, 100);
-
     return {
       ...a,
       _id: id,
       location: scopedLocation,
-      __score: score,
+      __score: Number((weightedScore * 100).toFixed(2)),
       __isFavorite: isFavorite,
       __inItinerary: inItinerary,
-      __categoryWeight: categoryWeight,
-      __priority: priority,
+      __favoriteScore: favoriteScore,
+      __priorityScore: priorityScore,
+      __ratingScore: ratingScore,
+      __categoryMatchScore: categoryMatchScore,
+      __priorityRaw: priorityRaw,
+      __ratingRaw: ratingRaw,
     };
   });
 
   normalized.sort((a, b) => {
     if (b.__score !== a.__score) return b.__score - a.__score;
+    if (a.__inItinerary !== b.__inItinerary) return a.__inItinerary ? -1 : 1;
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
 
-  const cap = Number.isFinite(AI_SELECTED_ACTIVITIES_CAP) && AI_SELECTED_ACTIVITIES_CAP > 0
-    ? AI_SELECTED_ACTIVITIES_CAP
-    : 24;
+  const perDayCap = Number.isFinite(AI_SELECTED_ACTIVITIES_PER_DAY_CAP) && AI_SELECTED_ACTIVITIES_PER_DAY_CAP > 0
+    ? Math.floor(AI_SELECTED_ACTIVITIES_PER_DAY_CAP)
+    : 10;
+  const dynamicCap = Math.max(perDayCap, generatedDayCount * perDayCap);
+  const capMax = Number.isFinite(AI_SELECTED_ACTIVITIES_CAP_MAX) && AI_SELECTED_ACTIVITIES_CAP_MAX > 0
+    ? Math.floor(AI_SELECTED_ACTIVITIES_CAP_MAX)
+    : dynamicCap;
+  const cap = Math.min(dynamicCap, capMax);
 
-  const selected = normalized.slice(0, cap).map((a) => {
+  const normalizedById = new Map(
+    normalized
+      .map((a) => [String(a?._id || '').trim(), a])
+      .filter(([id]) => !!id)
+  );
+
+  const forcedItems = itineraryActivityIdsOrdered
+    .map((activityId) => normalizedById.get(activityId))
+    .filter(Boolean);
+  const forcedIds = new Set(forcedItems.map((a) => String(a?._id || '').trim()));
+
+  const effectiveCap = Math.max(cap, forcedItems.length);
+  const selectedWithMeta = [
+    ...forcedItems,
+    ...normalized.filter((a) => !forcedIds.has(String(a?._id || '').trim())),
+  ].slice(0, effectiveCap);
+
+  const selected = selectedWithMeta.map((a) => {
     const {
       __score,
       __isFavorite,
       __inItinerary,
-      __categoryWeight,
-      __priority,
+      __favoriteScore,
+      __priorityScore,
+      __ratingScore,
+      __categoryMatchScore,
+      __priorityRaw,
+      __ratingRaw,
       ...clean
     } = a;
     return clean;
@@ -216,9 +428,21 @@ function buildSelectedActivitiesForAi(aiInput = {}) {
   return {
     selected,
     diagnostics: {
+      scoringWeights: {
+        favorite: WEIGHTS.favorite,
+        priority: WEIGHTS.priority,
+        rating: WEIGHTS.rating,
+        categoryMatch: WEIGHTS.categoryMatch,
+      },
       totalActivities: normalized.length,
       selectedActivities: selected.length,
       cap,
+      perDayCap,
+      generatedDayCount,
+      scope,
+      targetDayYmd: targetDayYmd || null,
+      effectiveCap,
+      forcedItineraryActivities: forcedItems.length,
       favoritesInSelected: selected.filter((a) => favoriteIds.has(String(a?._id || ''))).length,
       itineraryActivitiesInSelected: selected.filter((a) =>
         itineraryActivityIds.has(String(a?._id || ''))
@@ -227,19 +451,31 @@ function buildSelectedActivitiesForAi(aiInput = {}) {
         id: a._id,
         name: a.name,
         score: a.__score,
-        favorite: a.__isFavorite,
-        inItinerary: a.__inItinerary,
-        categoryWeight: Number(a.__categoryWeight || 0),
-        priority: Number(a.__priority || 0),
+        inItinerary: !!a.__inItinerary,
+        components: {
+          favorite: Number(a.__favoriteScore || 0),
+          priority: Number(a.__priorityScore || 0),
+          rating: Number(a.__ratingScore || 0),
+          categoryMatch: Number(a.__categoryMatchScore || 0),
+        },
+        raw: {
+          priority: Number(a.__priorityRaw || 0),
+          rating: Number(a.__ratingRaw || 0),
+        },
       })),
     },
   };
 }
 
-function buildAiInputForModel(aiInput = {}) {
-  const { selected, diagnostics } = buildSelectedActivitiesForAi(aiInput);
+function buildAiInputForModel(aiInput = {}, generationScope = null) {
+  const { selected, diagnostics } = buildSelectedActivitiesForAi(aiInput, { generationScope });
   const days = getDateRangeDays(aiInput?.tripContext?.startDate, aiInput?.tripContext?.endDate);
   const itineraryItems = Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [];
+  const avgDurationMinutes = computeAverageActivityDurationMinutes(selected, DEFAULT_ACTIVITY_DURATION_MIN);
+  const paceTargets = derivePaceTargets(aiInput?.userContext?.preferences?.pace, {
+    dayWindowMinutes: 14 * 60,
+    avgDurationMinutes,
+  });
   const itineraryByDay = {};
   for (const item of itineraryItems) {
     const key = dayKeyFromIso(item?.timelineStartDate);
@@ -257,8 +493,8 @@ function buildAiInputForModel(aiInput = {}) {
         sleepTime: aiInput?.userContext?.preferences?.sleepTime || null,
       },
       dayCoverage: {
-        minActivitiesPerDay: 2,
-        preferredActivitiesPerDay: 3,
+        minActivitiesPerDay: paceTargets.minActivitiesPerDay,
+        preferredActivitiesPerDay: paceTargets.preferredActivitiesPerDay,
         requiredBlocks: ['morning', 'afternoon'],
       },
     },
@@ -268,11 +504,14 @@ function buildAiInputForModel(aiInput = {}) {
     modelInput,
     diagnostics: {
       ...diagnostics,
+      paceTargets,
+      avgDurationMinutes,
       dayCount: days.length,
       dayCoverageBefore: days.map((d) => ({
         day: d,
         itineraryItems: itineraryByDay[d] || 0,
       })),
+      generationScope: generationScope || null,
     },
   };
 }
@@ -399,25 +638,361 @@ function findFreeStart(intervals = [], preferredStartMin, durationMin, wakeMin, 
   return null;
 }
 
-function enforceAndRepairPlan(sanitized = {}, modelInput = {}) {
+function appendReason(baseReason, suffix) {
+  const base = String(baseReason || '').trim();
+  const next = String(suffix || '').trim();
+  if (!next) return base || null;
+  if (!base) return next;
+  if (base.includes(next)) return base;
+  return `${base}; ${next}`;
+}
+
+function findFreeStartBestEffort(intervals = [], preferredStartMin, durationMin, wakeMin, sleepMin) {
+  const strictStart = findFreeStart(intervals, preferredStartMin, durationMin, wakeMin, sleepMin);
+  if (strictStart != null) {
+    return {
+      startMin: strictStart,
+      windowWakeMin: wakeMin,
+      windowSleepMin: sleepMin,
+      usedOverflow: false,
+    };
+  }
+
+  const tolerance = Math.max(0, Math.floor(Number(AI_WINDOW_OVERFLOW_TOLERANCE_MIN) || 0));
+  if (!tolerance) {
+    return {
+      startMin: null,
+      windowWakeMin: wakeMin,
+      windowSleepMin: sleepMin,
+      usedOverflow: false,
+    };
+  }
+
+  const relaxedWake = clamp(wakeMin - tolerance, 0, 23 * 60 + 59);
+  const relaxedSleep = clamp(sleepMin + tolerance, relaxedWake + MIN_ACTIVITY_DURATION_MIN, 23 * 60 + 59);
+  const relaxedStart = findFreeStart(intervals, preferredStartMin, durationMin, relaxedWake, relaxedSleep);
+
+  return {
+    startMin: relaxedStart,
+    windowWakeMin: relaxedWake,
+    windowSleepMin: relaxedSleep,
+    usedOverflow: relaxedStart != null,
+  };
+}
+
+function itemMatchesActionTarget(item = {}, action = {}) {
+  const itineraryItemId = String(action?.itineraryItemId || '').trim();
+  const activityId = String(action?.activityId || '').trim();
+  const itemId = String(item?._id || '').trim();
+  const itemActivityId = String(item?.activityId || '').trim();
+  if (itineraryItemId && itemId && itineraryItemId === itemId) return true;
+  if (activityId && itemActivityId && activityId === itemActivityId) return true;
+  return false;
+}
+
+function dedupeActions(actions = []) {
+  const seen = new Set();
+  const deduped = [];
+  const dropped = [];
+  for (let i = 0; i < actions.length; i += 1) {
+    const action = actions[i];
+    const key = [
+      String(action?.type || '').trim(),
+      String(action?.itineraryItemId || '').trim(),
+      String(action?.activityId || '').trim(),
+      String(action?.timelineStartDate || '').trim(),
+      String(action?.timelineEndDate || '').trim(),
+    ].join('|');
+    if (seen.has(key)) {
+      dropped.push({
+        index: i,
+        reason: 'duplicate_action',
+        type: String(action?.type || '').trim() || null,
+        itineraryItemId: String(action?.itineraryItemId || '').trim() || null,
+        activityId: String(action?.activityId || '').trim() || null,
+      });
+      continue;
+    }
+    seen.add(key);
+    deduped.push(action);
+  }
+  return { deduped, dropped };
+}
+
+function resolvePrimaryActionConflicts(normalizedActions = [], tripItems = [], context = {}) {
+  const wakeMin = Number(context?.wakeMin);
+  const sleepMin = Number(context?.sleepMin);
+  const activityDurationById = context?.activityDurationById || new Map();
+
+  const { deduped, dropped: duplicateDrops } = dedupeActions(normalizedActions);
+  const dropped = [...duplicateDrops];
+
+  const ordered = [
+    ...deduped.filter((action) => String(action?.type || '').trim() === 'remove_activity'),
+    ...deduped.filter((action) => {
+      const type = String(action?.type || '').trim();
+      return type === 'update_activity' || type === 'reorder_activity';
+    }),
+    ...deduped.filter((action) => String(action?.type || '').trim() === 'add_activity'),
+  ];
+
+  const accepted = [];
+  let overflowAssignments = 0;
+  let workingItems = tripItems.slice();
+
+  for (const action of ordered) {
+    const type = String(action?.type || '').trim();
+    if (!type) continue;
+
+    const targetRows = workingItems.filter((row) => itemMatchesActionTarget(row, action));
+    const hasTarget = targetRows.length > 0;
+
+    if (type === 'remove_activity') {
+      if (!hasTarget) {
+        dropped.push({
+          reason: 'remove_target_not_found',
+          type,
+          itineraryItemId: String(action?.itineraryItemId || '').trim() || null,
+          activityId: String(action?.activityId || '').trim() || null,
+        });
+        continue;
+      }
+      workingItems = applyActionToItems(workingItems, action, activityDurationById);
+      accepted.push(action);
+      continue;
+    }
+
+    if ((type === 'update_activity' || type === 'reorder_activity') && !hasTarget) {
+      dropped.push({
+        reason: 'update_target_not_found',
+        type,
+        itineraryItemId: String(action?.itineraryItemId || '').trim() || null,
+        activityId: String(action?.activityId || '').trim() || null,
+      });
+      continue;
+    }
+
+    if (type === 'update_activity' || type === 'reorder_activity') {
+      const baseAction = { ...action };
+      const startIso = normalizeIsoOrNull(baseAction?.timelineStartDate);
+      const endIso = normalizeIsoOrNull(baseAction?.timelineEndDate);
+
+      if (startIso) {
+        const day = dayKeyFromIso(startIso);
+        const startMin = isoToUtcMinutes(startIso);
+        const candidateActivityId = String(baseAction?.activityId || targetRows[0]?.activityId || '').trim();
+        const fallbackDuration = activityDurationById.get(candidateActivityId) || DEFAULT_ACTIVITY_DURATION_MIN;
+        const explicitEndMin = endIso ? isoToUtcMinutes(endIso) : null;
+        const durationMin = explicitEndMin != null && startMin != null && explicitEndMin > startMin
+          ? (explicitEndMin - startMin)
+          : fallbackDuration;
+
+        if (!day || startMin == null) {
+          dropped.push({
+            reason: 'invalid_update_schedule',
+            type,
+            itineraryItemId: String(baseAction?.itineraryItemId || '').trim() || null,
+            activityId: candidateActivityId || null,
+          });
+          continue;
+        }
+
+        const nonTargetItems = workingItems.filter((row) => !itemMatchesActionTarget(row, baseAction));
+        const intervals = getDayIntervals(nonTargetItems, day);
+        const freeSlot = findFreeStartBestEffort(intervals, startMin, durationMin, wakeMin, sleepMin);
+        if (freeSlot.startMin == null) {
+          dropped.push({
+            reason: 'update_no_free_slot',
+            type,
+            itineraryItemId: String(baseAction?.itineraryItemId || '').trim() || null,
+            activityId: candidateActivityId || null,
+          });
+          continue;
+        }
+
+        if (freeSlot.usedOverflow) overflowAssignments += 1;
+        const safeEnd = clamp(
+          freeSlot.startMin + Math.max(durationMin, MIN_ACTIVITY_DURATION_MIN),
+          freeSlot.startMin + MIN_ACTIVITY_DURATION_MIN,
+          freeSlot.windowSleepMin
+        );
+        const rebased = {
+          ...baseAction,
+          timelineStartDate: withUtcMinutes(day, freeSlot.startMin),
+          timelineEndDate: withUtcMinutes(day, safeEnd),
+          reason: freeSlot.usedOverflow
+            ? appendReason(baseAction?.reason, 'overflow-window-tolerance')
+            : baseAction?.reason || null,
+        };
+        workingItems = applyActionToItems(workingItems, rebased, activityDurationById);
+        accepted.push(rebased);
+        continue;
+      }
+
+      workingItems = applyActionToItems(workingItems, baseAction, activityDurationById);
+      accepted.push(baseAction);
+      continue;
+    }
+
+    if (type === 'add_activity') {
+      const activityId = String(action?.activityId || '').trim();
+      const startIso = normalizeIsoOrNull(action?.timelineStartDate);
+      if (!activityId || !startIso) {
+        dropped.push({
+          reason: 'invalid_add_payload',
+          type,
+          itineraryItemId: null,
+          activityId: activityId || null,
+        });
+        continue;
+      }
+
+      const day = dayKeyFromIso(startIso);
+      const startMin = isoToUtcMinutes(startIso);
+      const endMinRaw = normalizeIsoOrNull(action?.timelineEndDate)
+        ? isoToUtcMinutes(action.timelineEndDate)
+        : null;
+      const fallbackDuration = activityDurationById.get(activityId) || DEFAULT_ACTIVITY_DURATION_MIN;
+      const durationMin = (startMin != null && endMinRaw != null && endMinRaw > startMin)
+        ? (endMinRaw - startMin)
+        : fallbackDuration;
+
+      if (!day || startMin == null) {
+        dropped.push({
+          reason: 'invalid_add_schedule',
+          type,
+          itineraryItemId: null,
+          activityId,
+        });
+        continue;
+      }
+
+      const intervals = getDayIntervals(workingItems, day);
+      const freeSlot = findFreeStartBestEffort(intervals, startMin, durationMin, wakeMin, sleepMin);
+      if (freeSlot.startMin == null) {
+        dropped.push({
+          reason: 'add_no_free_slot',
+          type,
+          itineraryItemId: null,
+          activityId,
+        });
+        continue;
+      }
+
+      if (freeSlot.usedOverflow) overflowAssignments += 1;
+      const safeEnd = clamp(
+        freeSlot.startMin + Math.max(durationMin, MIN_ACTIVITY_DURATION_MIN),
+        freeSlot.startMin + MIN_ACTIVITY_DURATION_MIN,
+        freeSlot.windowSleepMin
+      );
+      const rebased = {
+        ...action,
+        timelineStartDate: withUtcMinutes(day, freeSlot.startMin),
+        timelineEndDate: withUtcMinutes(day, safeEnd),
+        reason: freeSlot.usedOverflow
+          ? appendReason(action?.reason, 'overflow-window-tolerance')
+          : action?.reason || null,
+      };
+      workingItems = applyActionToItems(workingItems, rebased, activityDurationById);
+      accepted.push(rebased);
+      continue;
+    }
+  }
+
+  return {
+    accepted,
+    dropped,
+    overflowAssignments,
+    simulatedItems: workingItems,
+  };
+}
+
+function buildAdaptivePreferredSlots(options = {}) {
+  const {
+    targetAdds = 0,
+    wakeMin = 8 * 60,
+    sleepMin = 22 * 60,
+    morningStart = 9 * 60 + 30,
+    afternoonStart = 15 * 60,
+    needMorning = false,
+    needAfternoon = false,
+    referenceDurationMinutes = DEFAULT_ACTIVITY_DURATION_MIN,
+  } = options;
+
+  const out = [];
+  if (needMorning) out.push(clamp(morningStart, wakeMin, sleepMin));
+  if (needAfternoon) out.push(clamp(afternoonStart, wakeMin, sleepMin));
+  if (targetAdds <= out.length) return out.slice(0, targetAdds);
+
+  const remaining = targetAdds - out.length;
+  const slotPadding = Math.max(30, Math.round(referenceDurationMinutes * 0.3));
+  const start = clamp(wakeMin + slotPadding, wakeMin, sleepMin);
+  const end = clamp(sleepMin - (referenceDurationMinutes + slotPadding), start, sleepMin);
+
+  if (remaining === 1) {
+    out.push(clamp(Math.round((start + end) / 2), wakeMin, sleepMin));
+  } else {
+    for (let i = 0; i < remaining; i += 1) {
+      const ratio = remaining <= 1 ? 0.5 : (i / (remaining - 1));
+      out.push(clamp(Math.round(start + ((end - start) * ratio)), wakeMin, sleepMin));
+    }
+  }
+
+  return out
+    .sort((a, b) => a - b)
+    .filter((slot, index, arr) => index === 0 || Math.abs(slot - arr[index - 1]) >= 30);
+}
+
+function enforceAndRepairPlan(sanitized = {}, modelInput = {}, generationScope = null) {
   const aiActions = Array.isArray(sanitized?.actions) ? sanitized.actions : [];
   const tripItems = Array.isArray(modelInput?.itinerary?.items) ? modelInput.itinerary.items : [];
-  const tripDays = getDateRangeDays(modelInput?.tripContext?.startDate, modelInput?.tripContext?.endDate);
+  const tripDaysAll = getDateRangeDays(modelInput?.tripContext?.startDate, modelInput?.tripContext?.endDate);
+  const scope = generationScope?.scope === 'selected_day' ? 'selected_day' : 'whole_trip';
+  const targetDayYmd = scope === 'selected_day'
+    ? String(generationScope?.targetDayYmd || '').trim()
+    : '';
+  const tripDays = (scope === 'selected_day' && targetDayYmd)
+    ? [targetDayYmd]
+    : tripDaysAll;
   const prefWake = String(modelInput?.userContext?.preferences?.wakeUpTime || '').trim();
   const prefSleep = String(modelInput?.userContext?.preferences?.sleepTime || '').trim();
-  const itineraryWindow = deriveWindowFromItineraryUtcMinutes(tripItems);
-  const wakeMin = prefWake
+  const windowSeedItems = (scope === 'selected_day' && targetDayYmd)
+    ? tripItems.filter((it) => dayKeyFromIso(it?.timelineStartDate) === targetDayYmd)
+    : tripItems;
+  const itineraryWindow = deriveWindowFromItineraryUtcMinutes(windowSeedItems);
+  let wakeMin = prefWake
     ? parseTimeToMinutes(prefWake, parseTimeToMinutes(DEFAULT_WAKE_TIME, 8 * 60))
     : (itineraryWindow?.wakeMin ?? parseTimeToMinutes(DEFAULT_WAKE_TIME, 8 * 60));
-  const sleepMin = prefSleep
+  let sleepMin = prefSleep
     ? parseTimeToMinutes(prefSleep, parseTimeToMinutes(DEFAULT_SLEEP_TIME, 22 * 60))
     : (itineraryWindow?.sleepMin ?? parseTimeToMinutes(DEFAULT_SLEEP_TIME, 22 * 60));
+  let windowSource = prefWake || prefSleep ? 'preferences' : (itineraryWindow ? 'itinerary-derived' : 'default');
+
+  // If inferred itinerary window is too narrow, it blocks realistic day generation.
+  const MIN_INFERRED_WINDOW_MIN = 9 * 60;
+  if (!prefWake && !prefSleep && itineraryWindow && (sleepMin - wakeMin < MIN_INFERRED_WINDOW_MIN)) {
+    wakeMin = parseTimeToMinutes(DEFAULT_WAKE_TIME, 8 * 60);
+    sleepMin = parseTimeToMinutes(DEFAULT_SLEEP_TIME, 22 * 60);
+    windowSource = 'default-expanded';
+  }
+
+  if (sleepMin - wakeMin < 4 * 60) {
+    wakeMin = parseTimeToMinutes(DEFAULT_WAKE_TIME, 8 * 60);
+    sleepMin = parseTimeToMinutes(DEFAULT_SLEEP_TIME, 22 * 60);
+    windowSource = 'default-expanded';
+  }
+
   const morningStart = clamp(wakeMin + 30, wakeMin, sleepMin);
   const morningEnd = clamp(12 * 60 + 30, morningStart, sleepMin);
   const afternoonStart = clamp(14 * 60, morningEnd, sleepMin);
 
   const activities = Array.isArray(modelInput?.activities) ? modelInput.activities : [];
   const activityById = new Map(activities.map((a) => [String(a?._id || ''), a]));
+  const avgDurationMinutes = computeAverageActivityDurationMinutes(activities, DEFAULT_ACTIVITY_DURATION_MIN);
+  const paceTargets = derivePaceTargets(modelInput?.userContext?.preferences?.pace, {
+    dayWindowMinutes: sleepMin - wakeMin,
+    avgDurationMinutes,
+  });
   const activityDurationById = new Map(
     activities.map((a) => [String(a?._id || ''), getActivityDurationMin(a)])
   );
@@ -432,10 +1007,22 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}) {
     )
     .filter(Boolean);
 
-  let simulatedItems = tripItems.slice();
-  for (const action of normalizedActions) {
-    simulatedItems = applyActionToItems(simulatedItems, action, activityDurationById);
-  }
+  const {
+    accepted: primaryActions,
+    dropped: primaryDroppedActions,
+    overflowAssignments: primaryOverflowAssignments,
+    simulatedItems: simulatedAfterPrimary
+  } = resolvePrimaryActionConflicts(
+    normalizedActions,
+    tripItems,
+    {
+      wakeMin,
+      sleepMin,
+      activityDurationById,
+    }
+  );
+
+  let simulatedItems = simulatedAfterPrimary.slice();
 
   const usedActivityIds = new Set(
     simulatedItems
@@ -444,6 +1031,7 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}) {
   );
 
   const repairActions = [];
+  let repairOverflowAssignments = 0;
   const activityQueue = activities
     .map((a) => String(a?._id || '').trim())
     .filter(Boolean);
@@ -457,52 +1045,87 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}) {
 
     const needMorning = !hasMorning;
     const needAfternoon = !hasAfternoon;
-    const needCount = Math.max(0, AI_MIN_ACTIVITIES_PER_DAY - dayItems.length);
-    const needOccupied = Math.max(0, AI_MIN_OCCUPIED_MINUTES_PER_DAY - occupiedMin);
-    const targetAdds = Math.max(
-      needCount,
-      needMorning ? 1 : 0,
-      needAfternoon ? 1 : 0,
-      Math.ceil(needOccupied / Math.max(DEFAULT_ACTIVITY_DURATION_MIN, MIN_ACTIVITY_DURATION_MIN))
+    const hardCoverageNeed = (needMorning ? 1 : 0) + (needAfternoon ? 1 : 0);
+    const activitiesGapToMin = Math.max(0, paceTargets.minActivitiesPerDay - dayItems.length);
+    const activitiesGapToPreferred = Math.max(0, paceTargets.preferredActivitiesPerDay - dayItems.length);
+    const minutesGapToTarget = Math.max(0, paceTargets.targetOccupiedMinutesPerDay - occupiedMin);
+    const estimatedAddsForMinutes = Math.ceil(
+      minutesGapToTarget / Math.max(paceTargets.referenceDurationMinutes, MIN_ACTIVITY_DURATION_MIN)
     );
+
+    // Best effort: combine signals instead of forcing one deterministic count tier.
+    const weightedDemand = Math.ceil(
+      (activitiesGapToMin * 0.35) +
+      (activitiesGapToPreferred * 0.65) +
+      (estimatedAddsForMinutes * 0.6)
+    );
+
+    const maxAddsByCount = Math.max(0, paceTargets.maxActivitiesPerDay - dayItems.length);
+    const maxAddsByTime = Math.max(
+      0,
+      Math.floor((sleepMin - wakeMin) / Math.max(paceTargets.referenceDurationMinutes + DAY_BUFFER_MIN, MIN_ACTIVITY_DURATION_MIN)) - dayItems.length
+    );
+    const availableCandidates = Math.max(0, activityQueue.length - usedActivityIds.size);
+    const maxAddsFeasible = Math.max(0, Math.min(maxAddsByCount, maxAddsByTime, availableCandidates));
+
+    let targetAdds = Math.max(hardCoverageNeed, weightedDemand);
+    if (hardCoverageNeed > 0 && maxAddsFeasible > 0) {
+      targetAdds = Math.max(targetAdds, Math.min(hardCoverageNeed, maxAddsFeasible));
+    }
+    targetAdds = Math.min(targetAdds, maxAddsFeasible);
+
     if (!targetAdds) continue;
 
-    const preferredSlots = [];
-    if (needMorning) preferredSlots.push(clamp(9 * 60 + 30, wakeMin, sleepMin));
-    if (needAfternoon) preferredSlots.push(clamp(15 * 60, wakeMin, sleepMin));
-    while (preferredSlots.length < targetAdds) {
-      preferredSlots.push(clamp(16 * 60, wakeMin, sleepMin));
-    }
+    const preferredSlots = buildAdaptivePreferredSlots({
+      targetAdds,
+      wakeMin,
+      sleepMin,
+      morningStart,
+      afternoonStart,
+      needMorning,
+      needAfternoon,
+      referenceDurationMinutes: paceTargets.referenceDurationMinutes,
+    });
 
     for (const preferredStart of preferredSlots) {
       const candidateId = activityQueue.find((id) => !usedActivityIds.has(id));
       if (!candidateId) break;
       const duration = activityDurationById.get(candidateId) || DEFAULT_ACTIVITY_DURATION_MIN;
-      const startMin = findFreeStart(intervals, preferredStart, duration, wakeMin, sleepMin);
-      if (startMin == null) continue;
-      const endMin = clamp(startMin + duration, startMin + MIN_ACTIVITY_DURATION_MIN, sleepMin);
+      const freeSlot = findFreeStartBestEffort(intervals, preferredStart, duration, wakeMin, sleepMin);
+      if (freeSlot.startMin == null) continue;
+      if (freeSlot.usedOverflow) repairOverflowAssignments += 1;
+      const endMin = clamp(
+        freeSlot.startMin + duration,
+        freeSlot.startMin + MIN_ACTIVITY_DURATION_MIN,
+        freeSlot.windowSleepMin
+      );
       const addAction = {
         type: 'add_activity',
         itineraryItemId: null,
         activityId: candidateId,
-        timelineStartDate: withUtcMinutes(day, startMin),
+        timelineStartDate: withUtcMinutes(day, freeSlot.startMin),
         timelineEndDate: withUtcMinutes(day, endMin),
-        reason: 'repair:day-coverage',
+        reason: freeSlot.usedOverflow
+          ? 'repair:day-coverage; overflow-window-tolerance'
+          : 'repair:day-coverage',
       };
       repairActions.push(addAction);
       usedActivityIds.add(candidateId);
-      intervals.push({ start: startMin, end: endMin });
+      intervals.push({ start: freeSlot.startMin, end: endMin });
       intervals.sort((a, b) => a.start - b.start);
       simulatedItems = applyActionToItems(simulatedItems, addAction, activityDurationById);
     }
   }
 
-  const mergedActions = normalizedActions.concat(repairActions);
+  const mergedActions = primaryActions.concat(repairActions);
   return {
     ...sanitized,
     actions: mergedActions,
+    actionsToApply: mergedActions,
     validation: {
       ...(sanitized.validation || {}),
+      primaryActionsAccepted: primaryActions.length,
+      primaryActionsDropped: primaryDroppedActions.length,
       actionsAfterRepair: mergedActions.length,
       repairActionsAdded: repairActions.length,
     },
@@ -510,23 +1133,39 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}) {
       ...(sanitized.diagnostics || {}),
       repair: {
         enabled: true,
-        windowSource: prefWake || prefSleep ? 'preferences' : (itineraryWindow ? 'itinerary-derived' : 'default'),
+        scope,
+        targetDayYmd: targetDayYmd || null,
+        windowSource,
         wakeTime: minutesToHHmm(wakeMin),
         sleepTime: minutesToHHmm(sleepMin),
         wakeMin,
         sleepMin,
+        pace: paceTargets.pace,
+        paceTargets,
+        avgDurationMinutes,
         dayCount: tripDays.length,
+        primaryActionsAccepted: primaryActions.length,
+        primaryActionsDropped: primaryDroppedActions.length,
+        primaryOverflowAssignments,
         repairActionsAdded: repairActions.length,
+        repairOverflowAssignments,
+        totalOverflowAssignments: primaryOverflowAssignments + repairOverflowAssignments,
+        windowOverflowToleranceMin: Math.max(0, Math.floor(Number(AI_WINDOW_OVERFLOW_TOLERANCE_MIN) || 0)),
+        primaryDroppedActions: primaryDroppedActions.slice(0, 20),
       },
     },
   };
 }
 
-function sanitizeAiAction(action, context = {}) {
-  if (!action || typeof action !== 'object') return null;
+function sanitizeAiActionWithReason(action, context = {}) {
+  if (!action || typeof action !== 'object') {
+    return { action: null, rejectReason: 'invalid_action_shape' };
+  }
 
   const type = String(action.type || '').trim();
-  if (!ALLOWED_ACTION_TYPES.has(type)) return null;
+  if (!ALLOWED_ACTION_TYPES.has(type)) {
+    return { action: null, rejectReason: 'invalid_action_type' };
+  }
 
   const itineraryItemId = isObjectIdLike(action.itineraryItemId)
     ? String(action.itineraryItemId)
@@ -542,42 +1181,24 @@ function sanitizeAiAction(action, context = {}) {
     allowedItineraryItemIds = new Set(),
   } = context;
 
-  // Field requirements by type
   if (type === 'add_activity' && (!activityId || !timelineStartDate)) {
-    return null;
+    return { action: null, rejectReason: 'missing_required_fields_for_add' };
   }
   if ((type === 'update_activity' || type === 'reorder_activity') && !itineraryItemId && !activityId) {
-    return null;
+    return { action: null, rejectReason: 'missing_target_for_update_or_reorder' };
   }
   if (type === 'remove_activity' && !itineraryItemId && !activityId) {
-    return null;
+    return { action: null, rejectReason: 'missing_target_for_remove' };
   }
 
-  // Hard validation: action ids must exist in the original input payload.
   if (activityId && allowedActivityIds.size && !allowedActivityIds.has(activityId)) {
-    return null;
+    return { action: null, rejectReason: 'activity_not_in_allowed_set' };
   }
   if (itineraryItemId && allowedItineraryItemIds.size && !allowedItineraryItemIds.has(itineraryItemId)) {
-    return null;
+    return { action: null, rejectReason: 'itinerary_item_not_in_allowed_set' };
   }
 
-  if (timelineStartDate && timelineEndDate) {
-    const s = +new Date(timelineStartDate);
-    const e = +new Date(timelineEndDate);
-    if (Number.isFinite(s) && Number.isFinite(e) && e < s) {
-      // Normalize inconsistent intervals by dropping end.
-      return {
-        type,
-        itineraryItemId,
-        activityId,
-        timelineStartDate,
-        timelineEndDate: null,
-        reason,
-      };
-    }
-  }
-
-  return {
+  const normalizedAction = {
     type,
     itineraryItemId,
     activityId,
@@ -585,22 +1206,47 @@ function sanitizeAiAction(action, context = {}) {
     timelineEndDate,
     reason,
   };
+
+  if (timelineStartDate && timelineEndDate) {
+    const s = +new Date(timelineStartDate);
+    const e = +new Date(timelineEndDate);
+    if (Number.isFinite(s) && Number.isFinite(e) && e < s) {
+      return {
+        action: {
+          ...normalizedAction,
+          timelineEndDate: null,
+        },
+        rejectReason: null,
+      };
+    }
+  }
+
+  return { action: normalizedAction, rejectReason: null };
 }
 
-function sanitizeAiResult(result, aiInput = {}) {
+function sanitizeAiResult(result, aiInput = {}, generationScope = null) {
   const raw = result && typeof result === 'object' ? result : {};
+  const scope = generationScope?.scope === 'selected_day' ? 'selected_day' : 'whole_trip';
+  const targetDayYmd = scope === 'selected_day'
+    ? String(generationScope?.targetDayYmd || '').trim()
+    : '';
+  const allItineraryItems = Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [];
+  const scopedItineraryItems = (scope === 'selected_day' && targetDayYmd)
+    ? allItineraryItems.filter((it) => dayKeyFromIso(it?.timelineStartDate) === targetDayYmd)
+    : allItineraryItems;
+
   const allowedActivityIds = new Set(
     (Array.isArray(aiInput?.activities) ? aiInput.activities : [])
       .map((a) => String(a?._id || '').trim())
       .filter(Boolean)
   );
   const allowedItineraryItemIds = new Set(
-    (Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [])
+    scopedItineraryItems
       .map((it) => String(it?._id || '').trim())
       .filter(Boolean)
   );
   const allowedActivityIdsFromItinerary = new Set(
-    (Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [])
+    scopedItineraryItems
       .map((it) => String(it?.activityId || '').trim())
       .filter(Boolean)
   );
@@ -609,9 +1255,61 @@ function sanitizeAiResult(result, aiInput = {}) {
   }
 
   const rawActions = Array.isArray(raw.actions) ? raw.actions : [];
-  const actions = rawActions
-    .map((a) => sanitizeAiAction(a, { allowedActivityIds, allowedItineraryItemIds }))
-    .filter(Boolean);
+  const rejectedDetails = [];
+  const acceptedEntries = [];
+
+  for (let i = 0; i < rawActions.length; i += 1) {
+    const rawAction = rawActions[i];
+    const { action, rejectReason } = sanitizeAiActionWithReason(rawAction, {
+      allowedActivityIds,
+      allowedItineraryItemIds,
+    });
+    if (!action) {
+      rejectedDetails.push({
+        index: i,
+        reason: rejectReason || 'unknown_rejection',
+        type: String(rawAction?.type || '').trim() || null,
+        itineraryItemId: String(rawAction?.itineraryItemId || '').trim() || null,
+        activityId: String(rawAction?.activityId || '').trim() || null,
+      });
+      continue;
+    }
+    acceptedEntries.push({
+      index: i,
+      action,
+    });
+  }
+
+  if (scope === 'selected_day' && targetDayYmd) {
+    const scopedEntries = [];
+    for (const entry of acceptedEntries) {
+      const rebasedAction = applySelectedDayScopeToAction(entry.action, targetDayYmd);
+      const touchesSelectedDay = actionTouchesSelectedDay(
+        rebasedAction,
+        targetDayYmd,
+        allowedItineraryItemIds,
+        allowedActivityIdsFromItinerary
+      );
+      if (!touchesSelectedDay) {
+        rejectedDetails.push({
+          index: entry.index,
+          reason: 'outside_selected_day_scope',
+          type: String(entry.action?.type || '').trim() || null,
+          itineraryItemId: String(entry.action?.itineraryItemId || '').trim() || null,
+          activityId: String(entry.action?.activityId || '').trim() || null,
+        });
+        continue;
+      }
+      scopedEntries.push({
+        ...entry,
+        action: rebasedAction,
+      });
+    }
+    acceptedEntries.length = 0;
+    acceptedEntries.push(...scopedEntries);
+  }
+
+  const actions = acceptedEntries.map((entry) => entry.action);
 
   return {
     trip_analysis: raw.trip_analysis && typeof raw.trip_analysis === 'object' ? raw.trip_analysis : null,
@@ -622,8 +1320,11 @@ function sanitizeAiResult(result, aiInput = {}) {
       actionsReceived: rawActions.length,
       actionsAccepted: actions.length,
       actionsRejected: Math.max(rawActions.length - actions.length, 0),
+      rejectedDetails,
       allowedActivities: allowedActivityIds.size,
       allowedItineraryItems: allowedItineraryItemIds.size,
+      scope,
+      targetDayYmd: targetDayYmd || null,
     },
     rawText: raw.rawText || null,
     parsingError: raw.parsingError || null,
@@ -654,6 +1355,7 @@ exports.generateItinerary = async (req, res) => {
       typeof req.body.extraInstructions === 'string'
         ? req.body.extraInstructions
         : undefined;
+    const generationScope = normalizeGenerationScope(req.body?.generationScope, aiInput);
 
     const reqSummary = {
       hasTripContext: !!aiInput?.tripContext,
@@ -672,11 +1374,12 @@ exports.generateItinerary = async (req, res) => {
         ? aiInput.userContext.favorites.activityIds.length
         : 0,
       hasExtraInstructions: !!extraInstructions,
+      generationScope,
       userId: req?.user?._id ? String(req.user._id) : null,
     };
     console.log(`${AI_LOG_PREFIX} incoming`, reqSummary);
 
-    const { modelInput, diagnostics } = buildAiInputForModel(aiInput);
+    const { modelInput, diagnostics } = buildAiInputForModel(aiInput, generationScope);
     console.log(`${AI_LOG_PREFIX} prepared-input`, diagnostics);
 
     if (!AI_EXECUTION_ENABLED) {
@@ -713,14 +1416,19 @@ exports.generateItinerary = async (req, res) => {
     const result = await generateItineraryResponse(modelInput, {
       extraInstructions,
     });
-    const sanitized = sanitizeAiResult(result, modelInput);
-    const repaired = enforceAndRepairPlan(sanitized, modelInput);
+    const sanitized = sanitizeAiResult(result, modelInput, generationScope);
+    const repaired = enforceAndRepairPlan(sanitized, modelInput, generationScope);
 
     console.log(`${AI_LOG_PREFIX} outgoing`, {
       parsingError: repaired?.parsingError || null,
       actionsReceived: repaired?.validation?.actionsReceived ?? 0,
       actionsAccepted: repaired?.validation?.actionsAccepted ?? 0,
       actionsRejected: repaired?.validation?.actionsRejected ?? 0,
+      rejectedDetailsCount: Array.isArray(repaired?.validation?.rejectedDetails)
+        ? repaired.validation.rejectedDetails.length
+        : 0,
+      primaryActionsAccepted: repaired?.validation?.primaryActionsAccepted ?? 0,
+      primaryActionsDropped: repaired?.validation?.primaryActionsDropped ?? 0,
       actionsAfterRepair: repaired?.validation?.actionsAfterRepair ?? 0,
       repairActionsAdded: repaired?.validation?.repairActionsAdded ?? 0,
       modelId: repaired?.meta?.modelId || null,

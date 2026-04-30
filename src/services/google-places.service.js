@@ -126,6 +126,21 @@ const FIELDS = [
   'places.timeZone.id'
 ].join(',');
 
+const PLACE_CACHE_FIELD_MASK = [
+  'id',
+  'displayName',
+  'formattedAddress',
+  'location',
+  'rating',
+  'userRatingCount',
+  'businessStatus',
+  'types',
+  'googleMapsUri',
+  'regularOpeningHours.periods',
+  'regularOpeningHours.weekdayDescriptions',
+  'timeZone.id',
+].join(',');
+
 // Build headers
 function buildHeaders() {
   return {
@@ -168,6 +183,28 @@ function mapPlace(p) {
       };
     }),
     types: p.types || []
+  };
+}
+
+function mapPlaceCachePayload(p = {}, fieldMask = PLACE_CACHE_FIELD_MASK) {
+  const lat = Number(p?.location?.latitude);
+  const lng = Number(p?.location?.longitude);
+  const placeId = String(p?.id || p?.placeId || '').trim();
+  return {
+    placeId,
+    name: String(p?.displayName?.text || p?.name || '').trim(),
+    formattedAddress: String(p?.formattedAddress || '').trim(),
+    geo: Number.isFinite(lat) && Number.isFinite(lng)
+      ? { type: 'Point', coordinates: [lng, lat] }
+      : undefined,
+    ratingAvg: Number.isFinite(Number(p?.rating)) ? Number(p.rating) : undefined,
+    reviewsCount: Number.isFinite(Number(p?.userRatingCount)) ? Number(p.userRatingCount) : undefined,
+    businessStatus: String(p?.businessStatus || '').trim() || undefined,
+    types: Array.isArray(p?.types) ? p.types.map((type) => String(type || '').trim()).filter(Boolean) : [],
+    googleMapsUri: String(p?.googleMapsUri || '').trim() || undefined,
+    openingHours: p?.regularOpeningHours || undefined,
+    timeZone: String(p?.timeZone?.id || '').trim() || undefined,
+    fieldMask,
   };
 }
 
@@ -329,6 +366,68 @@ async function search({ textQuery, lat, lng }) {
   } catch (err) {
     console.error('[GooglePlacesService] search error:', err.response?.data || err);
     return [];
+  }
+}
+
+async function searchTextForPlaceCache({ textQuery, lat, lng, maxResultCount = 5, languageCode = 'en' } = {}) {
+  const query = String(textQuery || '').trim();
+  if (!query) return [];
+
+  try {
+    const payload = {
+      textQuery: query,
+      languageCode,
+      maxResultCount: Math.max(1, Math.min(Number(maxResultCount) || 5, 10)),
+    };
+
+    if (Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+      payload.locationBias = {
+        circle: {
+          center: { latitude: Number(lat), longitude: Number(lng) },
+          radius: 10000,
+        },
+      };
+    }
+
+    const response = await axios.post(
+      GOOGLE_PLACES_URL,
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': `places.${PLACE_CACHE_FIELD_MASK.split(',').join(',places.')}`,
+        },
+      }
+    );
+
+    const places = Array.isArray(response?.data?.places) ? response.data.places : [];
+    return places.map((place) => mapPlaceCachePayload(place));
+  } catch (err) {
+    console.error('[GooglePlacesService] searchTextForPlaceCache error:', err.response?.data || err);
+    return [];
+  }
+}
+
+async function getPlaceCacheDetails(placeId, options = {}) {
+  const id = String(placeId || '').trim();
+  if (!id) return null;
+
+  try {
+    const languageCode = String(options.languageCode || 'en').trim() || 'en';
+    const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}?languageCode=${encodeURIComponent(languageCode)}`;
+    const response = await axios.get(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY,
+        'X-Goog-FieldMask': PLACE_CACHE_FIELD_MASK,
+      },
+    });
+    const payload = mapPlaceCachePayload(response?.data || {}, PLACE_CACHE_FIELD_MASK);
+    return payload.placeId ? payload : null;
+  } catch (err) {
+    console.error('[GooglePlacesService] getPlaceCacheDetails error:', err.response?.data || err);
+    return null;
   }
 }
 
@@ -755,6 +854,8 @@ module.exports = {
   fallbackResolveLocation,
   getPlaceDetails,
   getPlaceLookup,
+  getPlaceCacheDetails,
+  searchTextForPlaceCache,
   parseAddressComponents,
   reverseGeocode,
   reverseGeocodeAddress,

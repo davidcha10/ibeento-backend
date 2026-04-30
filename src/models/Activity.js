@@ -63,6 +63,12 @@ function normalizeLocalizedSlugs(rawSlugs = {}, namesObj = {}, fallbackSlug = ''
 const activitySchema = new Schema({
 
     name: { type: String, required: true, trim: true },
+    nameSource: {
+      type: String,
+      enum: ['manual', 'source_claim', 'ai', 'open_data', 'google_cache'],
+      default: 'manual',
+      index: true,
+    },
     names: {
       type: Map,
       of: String,
@@ -93,6 +99,12 @@ const activitySchema = new Schema({
       },
     },
     active: { type: Boolean, default: true },
+    visibility: {
+      type: String,
+      enum: ['public', 'imported_private', 'admin_review', 'hidden'],
+      default: 'public',
+      index: true,
+    },
 
     location: {
 
@@ -107,7 +119,7 @@ const activitySchema = new Schema({
       },
       addressSource: {
         type: String,
-        enum: ['wikidata', 'nominatim', 'manual'],
+        enum: ['wikidata', 'nominatim', 'manual', 'google_cache'],
         default: 'manual',
       },
       geo: {
@@ -116,7 +128,7 @@ const activitySchema = new Schema({
       },
       geoSource: {
         type: String,
-        enum: ['wikidata', 'nominatim', 'manual'],
+        enum: ['wikidata', 'nominatim', 'manual', 'google_cache'],
         default: 'manual',
       },
       geoConfidence: {
@@ -165,28 +177,41 @@ const activitySchema = new Schema({
 
     },
 
-    pricing: {
-
-        currency: { type: String, trim: true },                  // ISO 4217 code, e.g. "USD", "EUR", "COP"
-        priceFrom: { type: Number },                             // minimum known price for the activity
-        priceTo: { type: Number },                               // optional upper bound (e.g. seasonal or tiered pricing)
-        pricingModel: {
+    accessHint: {
+      requirement: {
+        type: String,
+        enum: [
+          'unknown',
+          'free',
+          'ticket_required',
+          'reservation_required',
+          'reservation_recommended',
+          'pay_on_site',
+          'guided_service_available',
+        ],
+        default: 'unknown',
+      },
+      priceIndication: {
+        currency: { type: String, trim: true, uppercase: true },
+        priceFrom: { type: Number },
+        priceTo: { type: Number },
+        unit: {
           type: String,
-          enum: ['per_person', 'per_group', 'per_night', 'free', 'unknown'],
-          default: 'unknown',
-        },                                                       // how the price should be interpreted
-        source: {
-          type: String,
-          enum: ['provider', 'manual', 'ai'],
-          default: 'manual',
-        },                                                       // where this pricing data came from
-
-    },
-
-    purchaseHint: {
-      requiresTicket: { type: Boolean, default: false },
+          enum: ['person', 'group', 'entry', 'night', 'other'],
+        },
+        note: { type: String, trim: true },
+      },
       message: { type: String, trim: true },
-      ctaLabel: { type: String, trim: true },
+      confidence: {
+        type: String,
+        enum: ['high', 'medium', 'low'],
+        default: 'low',
+      },
+      source: {
+        type: String,
+        enum: ['manual', 'ai', 'official', 'provider', 'wikidata', 'unknown'],
+        default: 'unknown',
+      },
     },
 
     media: {
@@ -205,6 +230,12 @@ const activitySchema = new Schema({
         ratingAvg: { type: Number, default: 0 },
         reviewsCount: { type: Number, default: 0 },
         priority: { type: Number, default: 0 },
+        prioritySource: {
+          type: String,
+          enum: ['manual', 'category', 'google_cache_user_trend', 'user_trend', 'unknown'],
+          default: 'unknown',
+        },
+        priorityFormulaVersion: { type: String, trim: true },
 
     },
 
@@ -225,12 +256,67 @@ const activitySchema = new Schema({
     externalRef: {
       provider: {
         type: String,
-        enum: ['wikidata', 'google', 'manual'],
+        enum: ['wikidata', 'google', 'manual', 'osm', 'official', 'social', 'social_import'],
         trim: true,
         required: true,
       },
       id: { type: String, trim: true },
       url: { type: String, trim: true },
+    },
+
+    sourceClaims: [{
+      source: {
+        type: String,
+        enum: ['instagram', 'tiktok', 'social_import', 'wikidata', 'osm', 'official', 'manual', 'ai', 'unknown'],
+        default: 'unknown',
+        index: true,
+      },
+      url: { type: String, trim: true },
+      externalId: { type: String, trim: true },
+      extractedName: { type: String, trim: true },
+      extractedContext: { type: String, trim: true },
+      evidenceText: { type: String, trim: true },
+      confidence: { type: Number, min: 0, max: 1 },
+      status: {
+        type: String,
+        enum: ['pending', 'accepted', 'rejected', 'merged'],
+        default: 'pending',
+        index: true,
+      },
+      importedAt: { type: Date, default: Date.now },
+      reviewedAt: { type: Date },
+      reviewedBy: { type: Types.ObjectId, ref: 'User' },
+      notes: { type: String, trim: true },
+    }],
+
+    googleCache: {
+      placeId: { type: String, trim: true },
+      status: {
+        type: String,
+        enum: ['active', 'expired', 'refresh_failed'],
+        default: 'active',
+        index: true,
+      },
+      fetchedAt: { type: Date },
+      expiresAt: { type: Date, index: true },
+      lastRefreshAt: { type: Date },
+      lastPurgeAt: { type: Date },
+      refreshCount: { type: Number, default: 0 },
+      lastError: { type: String, trim: true },
+      name: { type: String, trim: true },
+      formattedAddress: { type: String, trim: true },
+      geo: {
+        type: { type: String, enum: ['Point'] },
+        coordinates: { type: [Number] },
+      },
+      ratingAvg: { type: Number },
+      reviewsCount: { type: Number },
+      businessStatus: { type: String, trim: true },
+      types: [{ type: String, trim: true }],
+      googleMapsUri: { type: String, trim: true },
+      openingHours: Schema.Types.Mixed,
+      timeZone: { type: String, trim: true },
+      fieldMask: [{ type: String, trim: true }],
     },
 
     ownership: {
@@ -279,6 +365,9 @@ activitySchema.pre('validate', function (next) {
 
   const coords = this?.location?.geo?.coordinates;
   const type = this?.location?.geo?.type;
+  const cacheCoords = this?.googleCache?.geo?.coordinates;
+  const cacheType = this?.googleCache?.geo?.type;
+  const visibility = String(this?.visibility || '').trim();
 
   const valid =
     type === 'Point' &&
@@ -286,8 +375,15 @@ activitySchema.pre('validate', function (next) {
     coords.length === 2 &&
     Number.isFinite(Number(coords[0])) &&
     Number.isFinite(Number(coords[1]));
+  const validGoogleCache =
+    (visibility === 'imported_private' || visibility === 'admin_review') &&
+    cacheType === 'Point' &&
+    Array.isArray(cacheCoords) &&
+    cacheCoords.length === 2 &&
+    Number.isFinite(Number(cacheCoords[0])) &&
+    Number.isFinite(Number(cacheCoords[1]));
 
-  if (!valid) {
+  if (!valid && !validGoogleCache) {
     return next(new Error('location.geo (Point with [lng, lat]) is required'));
   }
   return next();
@@ -350,7 +446,11 @@ activitySchema.methods.getDisplaySlug = function getDisplaySlug(locale) {
 activitySchema.index({ 'location.primaryZoneId': 1, 'ranking.priority': 1 });
 activitySchema.index({ 'location.zonePathIds': 1, 'ranking.priority': 1 });
 activitySchema.index({ 'audit.status': 1, 'audit.isAudited': 1 });
+activitySchema.index({ 'sourceClaims.source': 1, 'sourceClaims.status': 1, active: 1 });
+activitySchema.index({ visibility: 1, active: 1, 'audit.status': 1 });
+activitySchema.index({ 'googleCache.expiresAt': 1, 'googleCache.status': 1 });
 activitySchema.index({ 'location.geo': '2dsphere' });
+activitySchema.index({ 'googleCache.geo': '2dsphere' }, { sparse: true });
 activitySchema.index(
   { name: 'text', description: 'text' },
   { weights: { name: 5, description: 1 } }
@@ -367,5 +467,14 @@ activitySchema.index(
 );
 activitySchema.index({ 'ownership.mode': 1, 'ownership.businessUnitId': 1, active: 1 });
 activitySchema.index({ 'orphanCleanup.pendingDeletion': 1, 'orphanCleanup.deleteAfterAt': 1 });
+activitySchema.index(
+  { 'googleCache.placeId': 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      'googleCache.placeId': { $type: 'string' },
+    },
+  }
+);
 
 module.exports = model('Activity', activitySchema);

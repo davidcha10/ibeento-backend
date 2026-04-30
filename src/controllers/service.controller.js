@@ -499,12 +499,12 @@ function buildActivityLocationFromService(service = {}) {
   };
 }
 
-function mapPricingModelFromService(service = {}) {
+function mapAccessHintUnitFromService(service = {}) {
   const per = toTrimmedString(service?.pricing?.per).toLowerCase();
-  if (per === 'person') return 'per_person';
-  if (per === 'group') return 'per_group';
-  if (per === 'night') return 'per_night';
-  return 'unknown';
+  if (per === 'person') return 'person';
+  if (per === 'group') return 'group';
+  if (per === 'night') return 'night';
+  return undefined;
 }
 
 function normalizeActivityMediaFromService(service = {}) {
@@ -625,18 +625,19 @@ async function autoLinkServiceActivity(serviceDoc) {
       defaultDurationMin: derivedDefaultDurationMin || undefined,
       active: serviceDoc?.isActive !== false,
       location,
-      pricing: {
-        currency: toTrimmedString(serviceDoc?.pricing?.currency) || undefined,
-        priceFrom: Number.isFinite(Number(serviceDoc?.pricing?.basePrice))
-          ? Number(serviceDoc.pricing.basePrice)
-          : undefined,
-        pricingModel: mapPricingModelFromService(serviceDoc),
+      accessHint: {
+        requirement: 'ticket_required',
+        priceIndication: {
+          currency: toTrimmedString(serviceDoc?.pricing?.currency) || undefined,
+          priceFrom: Number.isFinite(Number(serviceDoc?.pricing?.basePrice))
+            ? Number(serviceDoc.pricing.basePrice)
+            : undefined,
+          unit: mapAccessHintUnitFromService(serviceDoc),
+        },
+        confidence: 'high',
         source: 'provider',
       },
       media: normalizeActivityMediaFromService(serviceDoc),
-      purchaseHint: {
-        requiresTicket: true,
-      },
       ownership: {
         mode: businessUnitId ? 'business_unit' : 'global',
         businessUnitId: businessUnitId || null,
@@ -668,9 +669,20 @@ async function autoLinkServiceActivity(serviceDoc) {
 
   if (!activityId) return serviceDoc;
 
-    const activityPatch = {
+  const activityPatch = {
     ...(derivedDefaultDurationMin ? { defaultDurationMin: derivedDefaultDurationMin } : {}),
-    purchaseHint: { requiresTicket: true },
+    accessHint: {
+      requirement: 'ticket_required',
+      priceIndication: {
+        currency: toTrimmedString(serviceDoc?.pricing?.currency) || undefined,
+        priceFrom: Number.isFinite(Number(serviceDoc?.pricing?.basePrice))
+          ? Number(serviceDoc.pricing.basePrice)
+          : undefined,
+        unit: mapAccessHintUnitFromService(serviceDoc),
+      },
+      confidence: 'high',
+      source: 'provider',
+    },
     ownership: {
       mode: businessUnitId ? 'business_unit' : 'global',
       businessUnitId: businessUnitId || null,

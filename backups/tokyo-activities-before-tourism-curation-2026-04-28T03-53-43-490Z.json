@@ -1,0 +1,7202 @@
+{
+  "generatedAt": "2026-04-28T03:53:43.490Z",
+  "zones": [
+    {
+      "_id": "6999173afca79e4498886f87",
+      "name": "Tokyo",
+      "slug": "tokyo",
+      "taxonomySnapshot": {
+        "canonicalType": "city",
+        "typeCode": "big_city",
+        "qid": "Q1549591",
+        "taxonomyId": "69990b9c0c5e738e61709834",
+        "taxonomyCandidates": [],
+        "numberOfSteps": 0,
+        "displayTypeLabel": "Big city",
+        "wikidataName": "big city",
+        "auditStatus": "pending"
+      },
+      "externalId": "Q1490",
+      "active": true,
+      "discoverPreviewSearched": true
+    },
+    {
+      "_id": "69b4691c5c052622bb57c6a7",
+      "name": "Tokyo",
+      "slug": "tokyo",
+      "taxonomySnapshot": {
+        "canonicalType": "city",
+        "typeCode": "city",
+        "qid": "Q515",
+        "taxonomyId": "699522d90c5e738e616ef7ea",
+        "taxonomyCandidates": [],
+        "numberOfSteps": 0,
+        "displayTypeLabel": "City",
+        "wikidataName": "city",
+        "auditStatus": "pending"
+      },
+      "externalId": "Q7473516",
+      "active": true,
+      "discoverPreviewSearched": false
+    }
+  ],
+  "rows": [
+    {
+      "id": "699a0951ff031f7c6096eebd",
+      "name": "Tokyo Tower",
+      "slug": "tokyo-tower",
+      "type": "place",
+      "priority": 96,
+      "categories": [
+        "Observation Tower",
+        "Tourist Attraction"
+      ],
+      "description": "tower in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q183536",
+        "url": "https://www.wikidata.org/wiki/Q183536"
+      }
+    },
+    {
+      "id": "699a094bff031f7c6096eea2",
+      "name": "Mode Gakuen Cocoon Tower",
+      "slug": "mode-gakuen-cocoon-tower",
+      "type": "place",
+      "priority": 88,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1030463",
+        "url": "https://www.wikidata.org/wiki/Q1030463"
+      }
+    },
+    {
+      "id": "699a0952ff031f7c6096eed8",
+      "name": "Tokyo Skytree",
+      "slug": "tokyo-skytree",
+      "type": "place",
+      "priority": 81,
+      "categories": [
+        "Observation Tower"
+      ],
+      "description": "tower in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q57965",
+        "url": "https://www.wikidata.org/wiki/Q57965"
+      }
+    },
+    {
+      "id": "699a0952ff031f7c6096eeee",
+      "name": "Akihabara",
+      "slug": "akihabara",
+      "type": "place",
+      "priority": 80,
+      "categories": [
+        "shopping street"
+      ],
+      "description": "town located in Chiyoda, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q418096",
+        "url": "https://www.wikidata.org/wiki/Q418096"
+      }
+    },
+    {
+      "id": "699a0953ff031f7c6096ef09",
+      "name": "Yasukuni Shrine",
+      "slug": "yasukuni-shrine",
+      "type": "place",
+      "priority": 79,
+      "categories": [
+        "Shrine",
+        "Monument"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q242803",
+        "url": "https://www.wikidata.org/wiki/Q242803"
+      }
+    },
+    {
+      "id": "699a0953ff031f7c6096ef1f",
+      "name": "Tokyo Imperial Palace",
+      "slug": "tokyo-imperial-palace",
+      "type": "place",
+      "priority": 78,
+      "categories": [
+        "Palace"
+      ],
+      "description": "main residence of the Emperor of Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category palace"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q500681",
+        "url": "https://www.wikidata.org/wiki/Q500681"
+      }
+    },
+    {
+      "id": "699a0953ff031f7c6096ef35",
+      "name": "Meiji Jingū",
+      "slug": "meiji-jingu",
+      "type": "place",
+      "priority": 75,
+      "categories": [
+        "Tourist Attraction"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q287165",
+        "url": "https://www.wikidata.org/wiki/Q287165"
+      }
+    },
+    {
+      "id": "699a0954ff031f7c6096ef50",
+      "name": "Tokyo Dome",
+      "slug": "tokyo-dome",
+      "type": "place",
+      "priority": 73,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "indoor stadium in Bunkyō, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q733748",
+        "url": "https://www.wikidata.org/wiki/Q733748"
+      }
+    },
+    {
+      "id": "699a0954ff031f7c6096ef66",
+      "name": "National Art Center, Tokyo",
+      "slug": "national-art-center-tokyo",
+      "type": "place",
+      "priority": 72,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1362638",
+        "url": "https://www.wikidata.org/wiki/Q1362638"
+      }
+    },
+    {
+      "id": "699a0954ff031f7c6096ef81",
+      "name": "Yoyogi Park",
+      "slug": "yoyogi-park",
+      "type": "place",
+      "priority": 72,
+      "categories": [
+        "Park",
+        "Garden"
+      ],
+      "description": "park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1204253",
+        "url": "https://www.wikidata.org/wiki/Q1204253"
+      }
+    },
+    {
+      "id": "699a0955ff031f7c6096efbc",
+      "name": "Akasaka Palace",
+      "slug": "akasaka-palace",
+      "type": "place",
+      "priority": 71,
+      "categories": [
+        "Palace"
+      ],
+      "description": "state guest house in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category palace"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q555255",
+        "url": "https://www.wikidata.org/wiki/Q555255"
+      }
+    },
+    {
+      "id": "699a0956ff031f7c6096efcf",
+      "name": "Kabukichō",
+      "slug": "kabukicho",
+      "type": "place",
+      "priority": 71,
+      "categories": [
+        "cultural district"
+      ],
+      "description": "quarter located in Shinjuku-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q665216",
+        "url": "https://www.wikidata.org/wiki/Q665216"
+      }
+    },
+    {
+      "id": "699a0955ff031f7c6096ef97",
+      "name": "Sensō-ji Temple",
+      "slug": "senso-ji-temple",
+      "type": "place",
+      "priority": 71,
+      "categories": [
+        "Tourist Attraction"
+      ],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q615183",
+        "url": "https://www.wikidata.org/wiki/Q615183"
+      }
+    },
+    {
+      "id": "699a0956ff031f7c6096efe5",
+      "name": "Shinjuku Gyoen",
+      "slug": "shinjuku-gyoen",
+      "type": "place",
+      "priority": 71,
+      "categories": [
+        "Park"
+      ],
+      "description": "park and garden in Shinjuku and Shibuya, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q776863",
+        "url": "https://www.wikidata.org/wiki/Q776863"
+      }
+    },
+    {
+      "id": "699a0955ff031f7c6096efa6",
+      "name": "Tōkaidō",
+      "slug": "tokaido",
+      "type": "place",
+      "priority": 71,
+      "categories": [
+        "Road"
+      ],
+      "description": "road of premodern Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q963514",
+        "url": "https://www.wikidata.org/wiki/Q963514"
+      }
+    },
+    {
+      "id": "699a0956ff031f7c6096eff8",
+      "name": "Rainbow Bridge",
+      "slug": "rainbow-bridge",
+      "type": "place",
+      "priority": 70,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "suspension bridge across the Tokyo Bay, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1046736",
+        "url": "https://www.wikidata.org/wiki/Q1046736"
+      }
+    },
+    {
+      "id": "699a0957ff031f7c6096f00e",
+      "name": "St. Mary's Cathedral",
+      "slug": "st-marys-cathedral",
+      "type": "place",
+      "priority": 70,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "seat of the Roman Catholic Archdiocese of Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1193480",
+        "url": "https://www.wikidata.org/wiki/Q1193480"
+      }
+    },
+    {
+      "id": "699a0957ff031f7c6096f024",
+      "name": "Ajinomoto Stadium",
+      "slug": "ajinomoto-stadium",
+      "type": "place",
+      "priority": 68,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "multi-purpose stadium in Chofu, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q412824",
+        "url": "https://www.wikidata.org/wiki/Q412824"
+      }
+    },
+    {
+      "id": "699a0957ff031f7c6096f03f",
+      "name": "Ghibli Museum",
+      "slug": "ghibli-museum",
+      "type": "place",
+      "priority": 68,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum in Mitaka, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q947907",
+        "url": "https://www.wikidata.org/wiki/Q947907"
+      }
+    },
+    {
+      "id": "699a0958ff031f7c6096f052",
+      "name": "Shibuya scramble crossing",
+      "slug": "shibuya-scramble-crossing",
+      "type": "place",
+      "priority": 68,
+      "categories": [
+        "Tourist Attraction"
+      ],
+      "description": "scramble crossing in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q21083961",
+        "url": "https://www.wikidata.org/wiki/Q21083961"
+      }
+    },
+    {
+      "id": "699a0958ff031f7c6096f068",
+      "name": "Midtown Tower",
+      "slug": "midtown-tower",
+      "type": "place",
+      "priority": 67,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1150357",
+        "url": "https://www.wikidata.org/wiki/Q1150357"
+      }
+    },
+    {
+      "id": "699a0958ff031f7c6096f073",
+      "name": "Omotesandō",
+      "slug": "omotesando",
+      "type": "place",
+      "priority": 67,
+      "categories": [
+        "Architectural Structure",
+        "Road"
+      ],
+      "description": "human settlement in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1205090",
+        "url": "https://www.wikidata.org/wiki/Q1205090"
+      }
+    },
+    {
+      "id": "69b4690e5c052622bb57c2de",
+      "name": "National Diet Library",
+      "slug": "national-diet-library",
+      "type": "experience",
+      "priority": 65,
+      "categories": [],
+      "description": "national library in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q477675",
+        "url": "https://www.wikidata.org/wiki/Q477675"
+      }
+    },
+    {
+      "id": "699a0959ff031f7c6096f085",
+      "name": "Yumenoshima Park",
+      "slug": "yumenoshima-park",
+      "type": "place",
+      "priority": 62,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11431452",
+        "url": "https://www.wikidata.org/wiki/Q11431452"
+      }
+    },
+    {
+      "id": "69b469115c052622bb57c312",
+      "name": "Odaiba",
+      "slug": "odaiba",
+      "type": "experience",
+      "priority": 58,
+      "categories": [],
+      "description": "town located in Minato-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q211861",
+        "url": "https://www.wikidata.org/wiki/Q211861"
+      }
+    },
+    {
+      "id": "699a31bd7824af0589553b8a",
+      "name": "Tokyo International Airport",
+      "slug": "tokyo-international-airport",
+      "type": "place",
+      "priority": 58,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "international airport serving Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q204853",
+        "url": "https://www.wikidata.org/wiki/Q204853"
+      }
+    },
+    {
+      "id": "69b469115c052622bb57c325",
+      "name": "Tokyo Station",
+      "slug": "tokyo-station",
+      "type": "experience",
+      "priority": 58,
+      "categories": [],
+      "description": "railway and metro station in Chiyoda, Tokyo, Japan. Central station of Tokyo.",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q283196",
+        "url": "https://www.wikidata.org/wiki/Q283196"
+      }
+    },
+    {
+      "id": "69b469125c052622bb57c338",
+      "name": "Japan National Stadium",
+      "slug": "japan-national-stadium",
+      "type": "experience",
+      "priority": 57,
+      "categories": [],
+      "description": "stadium in Kasumigaoka, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q14862239",
+        "url": "https://www.wikidata.org/wiki/Q14862239"
+      }
+    },
+    {
+      "id": "69b469125c052622bb57c34b",
+      "name": "Nippon Budōkan",
+      "slug": "nippon-budokan",
+      "type": "experience",
+      "priority": 57,
+      "categories": [],
+      "description": "indoor arena located in Chiyoda, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q386246",
+        "url": "https://www.wikidata.org/wiki/Q386246"
+      }
+    },
+    {
+      "id": "699a0959ff031f7c6096f098",
+      "name": "Tsukiji fish market",
+      "slug": "tsukiji-fish-market",
+      "type": "place",
+      "priority": 57,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q859471",
+        "url": "https://www.wikidata.org/wiki/Q859471"
+      }
+    },
+    {
+      "id": "69b469145c052622bb57c382",
+      "name": "National Stadium in Tokyo",
+      "slug": "national-stadium-in-tokyo",
+      "type": "experience",
+      "priority": 54,
+      "categories": [],
+      "description": "defunct multi-purpose stadium in Shinjuku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q330033",
+        "url": "https://www.wikidata.org/wiki/Q330033"
+      }
+    },
+    {
+      "id": "69b469145c052622bb57c373",
+      "name": "Shinjuku Station",
+      "slug": "shinjuku-station",
+      "type": "experience",
+      "priority": 54,
+      "categories": [],
+      "description": "railway station in Shinjuku and Shibuya wards in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q801447",
+        "url": "https://www.wikidata.org/wiki/Q801447"
+      }
+    },
+    {
+      "id": "699a0959ff031f7c6096f0b3",
+      "name": "Sunshine 60",
+      "slug": "sunshine-60",
+      "type": "place",
+      "priority": 54,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q602942",
+        "url": "https://www.wikidata.org/wiki/Q602942"
+      }
+    },
+    {
+      "id": "699a095dff031f7c6096f0db",
+      "name": "Sumida River",
+      "slug": "sumida-river",
+      "type": "place",
+      "priority": 53,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q222149",
+        "url": "https://www.wikidata.org/wiki/Q222149"
+      }
+    },
+    {
+      "id": "699a095aff031f7c6096f0c9",
+      "name": "Ueno Imperial Grant Park",
+      "slug": "ueno-imperial-grant-park",
+      "type": "place",
+      "priority": 53,
+      "categories": [
+        "Park",
+        "Garden"
+      ],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q746216",
+        "url": "https://www.wikidata.org/wiki/Q746216"
+      }
+    },
+    {
+      "id": "69b469155c052622bb57c3cc",
+      "name": "Tokyo Metropolitan Government Building",
+      "slug": "tokyo-metropolitan-government-building",
+      "type": "experience",
+      "priority": 52,
+      "categories": [],
+      "description": "building in Nishi-Shinjuku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q111973",
+        "url": "https://www.wikidata.org/wiki/Q111973"
+      }
+    },
+    {
+      "id": "699a095dff031f7c6096f0f1",
+      "name": "Yoshiwara",
+      "slug": "yoshiwara",
+      "type": "place",
+      "priority": 52,
+      "categories": [
+        "cultural district"
+      ],
+      "description": "red-light district of Edo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category cultural district"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1859550",
+        "url": "https://www.wikidata.org/wiki/Q1859550"
+      }
+    },
+    {
+      "id": "69b469165c052622bb57c3ff",
+      "name": "Shibuya Station",
+      "slug": "shibuya-station",
+      "type": "experience",
+      "priority": 51,
+      "categories": [],
+      "description": "railway station and metro station in Shibuya, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q428811",
+        "url": "https://www.wikidata.org/wiki/Q428811"
+      }
+    },
+    {
+      "id": "69b469165c052622bb57c3ec",
+      "name": "Yoyogi National Gymnasium",
+      "slug": "yoyogi-national-gymnasium",
+      "type": "experience",
+      "priority": 51,
+      "categories": [],
+      "description": "arena in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1069457",
+        "url": "https://www.wikidata.org/wiki/Q1069457"
+      }
+    },
+    {
+      "id": "699a095eff031f7c6096f107",
+      "name": "The National Museum of Modern Art, Tokyo",
+      "slug": "the-national-museum-of-modern-art-tokyo",
+      "type": "place",
+      "priority": 49,
+      "categories": [
+        "Museum"
+      ],
+      "description": "Art museum in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1359908",
+        "url": "https://www.wikidata.org/wiki/Q1359908"
+      }
+    },
+    {
+      "id": "699a095eff031f7c6096f116",
+      "name": "Shinjuku Park Tower",
+      "slug": "shinjuku-park-tower",
+      "type": "place",
+      "priority": 48,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1348023",
+        "url": "https://www.wikidata.org/wiki/Q1348023"
+      }
+    },
+    {
+      "id": "699a095eff031f7c6096f11d",
+      "name": "Tokyo Opera City Tower",
+      "slug": "tokyo-opera-city-tower",
+      "type": "place",
+      "priority": 48,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Shinjuku-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1201889",
+        "url": "https://www.wikidata.org/wiki/Q1201889"
+      }
+    },
+    {
+      "id": "699a095eff031f7c6096f15e",
+      "name": "Chichibunomiya Rugby Stadium",
+      "slug": "chichibunomiya-rugby-stadium",
+      "type": "place",
+      "priority": 47,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "rugby stadium in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q631237",
+        "url": "https://www.wikidata.org/wiki/Q631237"
+      }
+    },
+    {
+      "id": "699a095fff031f7c6096f174",
+      "name": "109",
+      "slug": "109",
+      "type": "place",
+      "priority": 46,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "Japanese department store chain",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q685328",
+        "url": "https://www.wikidata.org/wiki/Q685328"
+      }
+    },
+    {
+      "id": "699a095fff031f7c6096f181",
+      "name": "Hamarikyu Gardens",
+      "slug": "hamarikyu-gardens",
+      "type": "place",
+      "priority": 45,
+      "categories": [
+        "Garden",
+        "Park",
+        "Palace"
+      ],
+      "description": "park in Chuo, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1033333",
+        "url": "https://www.wikidata.org/wiki/Q1033333"
+      }
+    },
+    {
+      "id": "699a095fff031f7c6096f18c",
+      "name": "Inokashira Park",
+      "slug": "inokashira-park",
+      "type": "place",
+      "priority": 45,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Musashino and Mitaka, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1200884",
+        "url": "https://www.wikidata.org/wiki/Q1200884"
+      }
+    },
+    {
+      "id": "699a095fff031f7c6096f19c",
+      "name": "New National Theatre Tokyo",
+      "slug": "new-national-theatre-tokyo",
+      "type": "place",
+      "priority": 45,
+      "categories": [
+        "Theater"
+      ],
+      "description": "opera house in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1056064",
+        "url": "https://www.wikidata.org/wiki/Q1056064"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1b1",
+      "name": "Shinjuku Center Building",
+      "slug": "shinjuku-center-building",
+      "type": "place",
+      "priority": 45,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1134395",
+        "url": "https://www.wikidata.org/wiki/Q1134395"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1a2",
+      "name": "Shinjuku Mitsui Building",
+      "slug": "shinjuku-mitsui-building",
+      "type": "place",
+      "priority": 45,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Shinjuku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2413330",
+        "url": "https://www.wikidata.org/wiki/Q2413330"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1cd",
+      "name": "Artizon Museum",
+      "slug": "artizon-museum",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q913808",
+        "url": "https://www.wikidata.org/wiki/Q913808"
+      }
+    },
+    {
+      "id": "699a0961ff031f7c6096f204",
+      "name": "Currency Museum of the Bank of Japan",
+      "slug": "currency-museum-of-the-bank-of-japan",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Museum"
+      ],
+      "description": "museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q865607",
+        "url": "https://www.wikidata.org/wiki/Q865607"
+      }
+    },
+    {
+      "id": "699a0961ff031f7c6096f21a",
+      "name": "Hibiya Park",
+      "slug": "hibiya-park",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1378533",
+        "url": "https://www.wikidata.org/wiki/Q1378533"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1f7",
+      "name": "Holy Resurrection Cathedral",
+      "slug": "holy-resurrection-cathedral",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "church in Chiyoda ward Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2660430",
+        "url": "https://www.wikidata.org/wiki/Q2660430"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1e3",
+      "name": "Kabuki-za",
+      "slug": "kabuki-za",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Theater"
+      ],
+      "description": "Kabuki theatre in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3082575",
+        "url": "https://www.wikidata.org/wiki/Q3082575"
+      }
+    },
+    {
+      "id": "699a0961ff031f7c6096f229",
+      "name": "Roppongi Hills Mori Tower",
+      "slug": "roppongi-hills-mori-tower",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1771772",
+        "url": "https://www.wikidata.org/wiki/Q1771772"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1ea",
+      "name": "Shibakōen",
+      "slug": "shibakoen",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Minato, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3266956",
+        "url": "https://www.wikidata.org/wiki/Q3266956"
+      }
+    },
+    {
+      "id": "699a0960ff031f7c6096f1b7",
+      "name": "Tama River",
+      "slug": "tama-river",
+      "type": "place",
+      "priority": 44,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1063006",
+        "url": "https://www.wikidata.org/wiki/Q1063006"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f295",
+      "name": "Aoyama Cemetery",
+      "slug": "aoyama-cemetery",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "cemetery in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1036028",
+        "url": "https://www.wikidata.org/wiki/Q1036028"
+      }
+    },
+    {
+      "id": "699a0961ff031f7c6096f24c",
+      "name": "Edo-Tokyo Museum",
+      "slug": "edo-tokyo-museum",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Museum"
+      ],
+      "description": "museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1191042",
+        "url": "https://www.wikidata.org/wiki/Q1191042"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f26f",
+      "name": "Japan National Route 1",
+      "slug": "japan-national-route-1",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Road"
+      ],
+      "description": "Japanese road from Tokyo to Osaka, major road on the island of Honshū in Japan.",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1191191",
+        "url": "https://www.wikidata.org/wiki/Q1191191"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f268",
+      "name": "Kanda River",
+      "slug": "kanda-river",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3136772",
+        "url": "https://www.wikidata.org/wiki/Q3136772"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f279",
+      "name": "Kitanomaru Park",
+      "slug": "kitanomaru-park",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Park"
+      ],
+      "description": "town located in Chiyoda-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1075966",
+        "url": "https://www.wikidata.org/wiki/Q1075966"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f2a2",
+      "name": "Meiji Jingu Stadium",
+      "slug": "meiji-jingu-stadium",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "baseball stadium in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q944559",
+        "url": "https://www.wikidata.org/wiki/Q944559"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f262",
+      "name": "Miraikan",
+      "slug": "miraikan",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Museum"
+      ],
+      "description": "building",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q656957",
+        "url": "https://www.wikidata.org/wiki/Q656957"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f288",
+      "name": "Sumitomo Fudosan Roppongi Grand Tower",
+      "slug": "sumitomo-fudosan-roppongi-grand-tower",
+      "type": "place",
+      "priority": 43,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Minato-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q23666199",
+        "url": "https://www.wikidata.org/wiki/Q23666199"
+      }
+    },
+    {
+      "id": "699a0962ff031f7c6096f2aa",
+      "name": "Asakusa Shrine",
+      "slug": "asakusa-shrine",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q670049",
+        "url": "https://www.wikidata.org/wiki/Q670049"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2b8",
+      "name": "Gokoku-ji Temple",
+      "slug": "gokoku-ji-temple",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1534481",
+        "url": "https://www.wikidata.org/wiki/Q1534481"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2cd",
+      "name": "Izumi Garden Tower",
+      "slug": "izumi-garden-tower",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3275660",
+        "url": "https://www.wikidata.org/wiki/Q3275660"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2c7",
+      "name": "Shuto Expressway",
+      "slug": "shuto-expressway",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Road"
+      ],
+      "description": "Highway network in the metropolis of Tokyo in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1369525",
+        "url": "https://www.wikidata.org/wiki/Q1369525"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2da",
+      "name": "Tōgō Shrine",
+      "slug": "togo-shrine",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1384780",
+        "url": "https://www.wikidata.org/wiki/Q1384780"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2d3",
+      "name": "Zōjō-ji Temple",
+      "slug": "zojo-ji-temple",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q249139",
+        "url": "https://www.wikidata.org/wiki/Q249139"
+      }
+    },
+    {
+      "id": "699a0963ff031f7c6096f2e9",
+      "name": "Ōta Memorial Museum of Art",
+      "slug": "ota-memorial-museum-of-art",
+      "type": "place",
+      "priority": 42,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum in Shibuya, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3815442",
+        "url": "https://www.wikidata.org/wiki/Q3815442"
+      }
+    },
+    {
+      "id": "699a0964ff031f7c6096f308",
+      "name": "Ariake Urban Sports Park",
+      "slug": "ariake-urban-sports-park",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "stadium in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q64225270",
+        "url": "https://www.wikidata.org/wiki/Q64225270"
+      }
+    },
+    {
+      "id": "699a0965ff031f7c6096f33a",
+      "name": "Imperial Theatre",
+      "slug": "imperial-theatre",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Theater"
+      ],
+      "description": "theater in Marunouchi, Chiyoda, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q994171",
+        "url": "https://www.wikidata.org/wiki/Q994171"
+      }
+    },
+    {
+      "id": "699a0964ff031f7c6096f2fb",
+      "name": "Kasai Rinkai Park",
+      "slug": "kasai-rinkai-park",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Edogawa, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1038727",
+        "url": "https://www.wikidata.org/wiki/Q1038727"
+      }
+    },
+    {
+      "id": "699a0965ff031f7c6096f347",
+      "name": "Koishikawa Botanical Garden",
+      "slug": "koishikawa-botanical-garden",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Garden",
+        "Park"
+      ],
+      "description": "botanical garden",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1064892",
+        "url": "https://www.wikidata.org/wiki/Q1064892"
+      }
+    },
+    {
+      "id": "699a0965ff031f7c6096f34e",
+      "name": "Nezu Museum",
+      "slug": "nezu-museum",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1047097",
+        "url": "https://www.wikidata.org/wiki/Q1047097"
+      }
+    },
+    {
+      "id": "699a0964ff031f7c6096f315",
+      "name": "Rikugi Garden",
+      "slug": "rikugi-garden",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1889010",
+        "url": "https://www.wikidata.org/wiki/Q1889010"
+      }
+    },
+    {
+      "id": "699a0964ff031f7c6096f324",
+      "name": "Saint Luke's Tower",
+      "slug": "saint-lukes-tower",
+      "type": "place",
+      "priority": 41,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Chuo-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2736562",
+        "url": "https://www.wikidata.org/wiki/Q2736562"
+      }
+    },
+    {
+      "id": "69b4691b5c052622bb57c61e",
+      "name": "Sukiyabashi Jiro",
+      "slug": "sukiyabashi-jiro",
+      "type": "experience",
+      "priority": 41,
+      "categories": [],
+      "description": "sushi restaurant in Ginza, Chūō, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7635863",
+        "url": "https://www.wikidata.org/wiki/Q7635863"
+      }
+    },
+    {
+      "id": "699a0967ff031f7c6096f3ab",
+      "name": "Equestrian Park",
+      "slug": "equestrian-park",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Park",
+        "Garden"
+      ],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11667807",
+        "url": "https://www.wikidata.org/wiki/Q11667807"
+      }
+    },
+    {
+      "id": "699a0967ff031f7c6096f3b1",
+      "name": "Koishikawa Kōrakuen Garden",
+      "slug": "koishikawa-korakuen-garden",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Bunkyo, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1778881",
+        "url": "https://www.wikidata.org/wiki/Q1778881"
+      }
+    },
+    {
+      "id": "699a0967ff031f7c6096f3c0",
+      "name": "Mori Art Museum",
+      "slug": "mori-art-museum",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Art Gallery"
+      ],
+      "description": "Contemporary art museum in Tokyo, Japan.",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category art gallery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4410434",
+        "url": "https://www.wikidata.org/wiki/Q4410434"
+      }
+    },
+    {
+      "id": "69b4691b5c052622bb57c676",
+      "name": "Museum of Contemporary Art Tokyo",
+      "slug": "museum-of-contemporary-art-tokyo",
+      "type": "experience",
+      "priority": 40,
+      "categories": [
+        "Art Gallery"
+      ],
+      "description": "museum in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category art gallery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1649688",
+        "url": "https://www.wikidata.org/wiki/Q1649688"
+      }
+    },
+    {
+      "id": "699a0966ff031f7c6096f399",
+      "name": "Sengaku-ji Temple",
+      "slug": "sengaku-ji-temple",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Sōtō Zen Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3176144",
+        "url": "https://www.wikidata.org/wiki/Q3176144"
+      }
+    },
+    {
+      "id": "699a0968ff031f7c6096f3fa",
+      "name": "Shinjuku Nomura Building",
+      "slug": "shinjuku-nomura-building",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1048673",
+        "url": "https://www.wikidata.org/wiki/Q1048673"
+      }
+    },
+    {
+      "id": "699a0966ff031f7c6096f38a",
+      "name": "Shiodome City Center",
+      "slug": "shiodome-city-center",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1134566",
+        "url": "https://www.wikidata.org/wiki/Q1134566"
+      }
+    },
+    {
+      "id": "699a0966ff031f7c6096f36e",
+      "name": "Shiokaze Park",
+      "slug": "shiokaze-park",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Park"
+      ],
+      "description": "park on Odaiba in Shinagawa",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6630204",
+        "url": "https://www.wikidata.org/wiki/Q6630204"
+      }
+    },
+    {
+      "id": "699a0968ff031f7c6096f3f3",
+      "name": "Takeshita Street",
+      "slug": "takeshita-street",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "shopping street"
+      ],
+      "description": "street in Harajuku, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping street"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3179287",
+        "url": "https://www.wikidata.org/wiki/Q3179287"
+      }
+    },
+    {
+      "id": "699a0968ff031f7c6096f3ed",
+      "name": "Tokyo Metropolitan Teien Art Museum",
+      "slug": "tokyo-metropolitan-teien-art-museum",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Museum"
+      ],
+      "description": "museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q743773",
+        "url": "https://www.wikidata.org/wiki/Q743773"
+      }
+    },
+    {
+      "id": "699a0967ff031f7c6096f3e1",
+      "name": "Tokyo One Piece Tower",
+      "slug": "tokyo-one-piece-tower",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Amusement Park"
+      ],
+      "description": "indoor theme park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q28531358",
+        "url": "https://www.wikidata.org/wiki/Q28531358"
+      }
+    },
+    {
+      "id": "699a0967ff031f7c6096f3d2",
+      "name": "Tokyo Photographic Art Museum",
+      "slug": "tokyo-photographic-art-museum",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Museum"
+      ],
+      "description": "photography museum in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q862884",
+        "url": "https://www.wikidata.org/wiki/Q862884"
+      }
+    },
+    {
+      "id": "699a0965ff031f7c6096f35b",
+      "name": "Toyosu market",
+      "slug": "toyosu-market",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "Central wholesale market in Koto-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11633916",
+        "url": "https://www.wikidata.org/wiki/Q11633916"
+      }
+    },
+    {
+      "id": "699a0966ff031f7c6096f37c",
+      "name": "Yanaka Cemetery",
+      "slug": "yanaka-cemetery",
+      "type": "place",
+      "priority": 40,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "cemetery",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q864387",
+        "url": "https://www.wikidata.org/wiki/Q864387"
+      }
+    },
+    {
+      "id": "69b4691c5c052622bb57c6ad",
+      "name": "Ariake Tennis Forest Park",
+      "slug": "ariake-tennis-forest-park",
+      "type": "experience",
+      "priority": 39,
+      "categories": [],
+      "description": "sports park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11516419",
+        "url": "https://www.wikidata.org/wiki/Q11516419"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f47c",
+      "name": "Bunkamura",
+      "slug": "bunkamura",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Theater",
+        "Museum",
+        "Art Gallery"
+      ],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q583055",
+        "url": "https://www.wikidata.org/wiki/Q583055"
+      }
+    },
+    {
+      "id": "699a0968ff031f7c6096f407",
+      "name": "Edo-Tokyo Open Air Architectural Museum",
+      "slug": "edo-tokyo-open-air-architectural-museum",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Museum"
+      ],
+      "description": "museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1051229",
+        "url": "https://www.wikidata.org/wiki/Q1051229"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f46d",
+      "name": "Gōtoku-ji Temple",
+      "slug": "gotoku-ji-temple",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Buddhist temple in Setagaya, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11634381",
+        "url": "https://www.wikidata.org/wiki/Q11634381"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f443",
+      "name": "Kagurazaka",
+      "slug": "kagurazaka",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Road"
+      ],
+      "description": "neighborhood in Shinjuku-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3275957",
+        "url": "https://www.wikidata.org/wiki/Q3275957"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f497",
+      "name": "Keio Plaza Hotel Tokyo",
+      "slug": "keio-plaza-hotel-tokyo",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Shinjuku-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6383787",
+        "url": "https://www.wikidata.org/wiki/Q6383787"
+      }
+    },
+    {
+      "id": "69b4691c5c052622bb57c6cf",
+      "name": "Kyu Shiba Rikyu Garden",
+      "slug": "kyu-shiba-rikyu-garden",
+      "type": "experience",
+      "priority": 39,
+      "categories": [],
+      "description": "park in Minato, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3266874",
+        "url": "https://www.wikidata.org/wiki/Q3266874"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f459",
+      "name": "National Showa Memorial Museum",
+      "slug": "national-showa-memorial-museum",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Museum"
+      ],
+      "description": "Japanese museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3788883",
+        "url": "https://www.wikidata.org/wiki/Q3788883"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f482",
+      "name": "Omotesando Hills",
+      "slug": "omotesando-hills",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "building in Tokyo, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1076070",
+        "url": "https://www.wikidata.org/wiki/Q1076070"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f488",
+      "name": "Shinjuku Central Park",
+      "slug": "shinjuku-central-park",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Park",
+        "Garden"
+      ],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5364883",
+        "url": "https://www.wikidata.org/wiki/Q5364883"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f49e",
+      "name": "Shinjuku Sumitomo Building",
+      "slug": "shinjuku-sumitomo-building",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "building in Shinjuku ward, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q863588",
+        "url": "https://www.wikidata.org/wiki/Q863588"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4a5",
+      "name": "Sompo Japan Building",
+      "slug": "sompo-japan-building",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q269261",
+        "url": "https://www.wikidata.org/wiki/Q269261"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f43d",
+      "name": "Suntory Museum of Art",
+      "slug": "suntory-museum-of-art",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11249110",
+        "url": "https://www.wikidata.org/wiki/Q11249110"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f460",
+      "name": "Tokyo Dome City Hall",
+      "slug": "tokyo-dome-city-hall",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "event facility in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3267633",
+        "url": "https://www.wikidata.org/wiki/Q3267633"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f44a",
+      "name": "Tokyo Japan Temple",
+      "slug": "tokyo-japan-temple",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "temple of the Church of Jesus Christ of Latter-day Saints in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2036364",
+        "url": "https://www.wikidata.org/wiki/Q2036364"
+      }
+    },
+    {
+      "id": "699a096bff031f7c6096f425",
+      "name": "Tsukiji Hongan-ji Temple",
+      "slug": "tsukiji-hongan-ji-temple",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q943255",
+        "url": "https://www.wikidata.org/wiki/Q943255"
+      }
+    },
+    {
+      "id": "699a096cff031f7c6096f437",
+      "name": "Yushima Tenmangū",
+      "slug": "yushima-tenmangu",
+      "type": "place",
+      "priority": 39,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q335606",
+        "url": "https://www.wikidata.org/wiki/Q335606"
+      }
+    },
+    {
+      "id": "699a096eff031f7c6096f51a",
+      "name": "21 21 DESIGN SIGHT",
+      "slug": "21-21-design-sight",
+      "type": "place",
+      "priority": 38,
+      "categories": [],
+      "description": "design museum in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description museum in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q863044",
+        "url": "https://www.wikidata.org/wiki/Q863044"
+      }
+    },
+    {
+      "id": "699a096fff031f7c6096f543",
+      "name": "Ancient Orient Museum",
+      "slug": "ancient-orient-museum",
+      "type": "place",
+      "priority": 38,
+      "categories": [],
+      "description": "art museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description art museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1048740",
+        "url": "https://www.wikidata.org/wiki/Q1048740"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4f7",
+      "name": "Asukayama Park",
+      "slug": "asukayama-park",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Park"
+      ],
+      "description": "park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q901172",
+        "url": "https://www.wikidata.org/wiki/Q901172"
+      }
+    },
+    {
+      "id": "699a096fff031f7c6096f53d",
+      "name": "Chidorigafuchi National Cemetery",
+      "slug": "chidorigafuchi-national-cemetery",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Architectural Structure",
+        "Monument"
+      ],
+      "description": "cemetery in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category monument"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2972676",
+        "url": "https://www.wikidata.org/wiki/Q2972676"
+      }
+    },
+    {
+      "id": "699a096eff031f7c6096f513",
+      "name": "Grand Prince Hotel Akasaka",
+      "slug": "grand-prince-hotel-akasaka",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q555225",
+        "url": "https://www.wikidata.org/wiki/Q555225"
+      }
+    },
+    {
+      "id": "699a096fff031f7c6096f557",
+      "name": "Hanazono Shrine",
+      "slug": "hanazono-shrine",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Shinto shrine in Shinjuku-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3126680",
+        "url": "https://www.wikidata.org/wiki/Q3126680"
+      }
+    },
+    {
+      "id": "699a31c27824af0589553dc3",
+      "name": "Japan National Route 15",
+      "slug": "japan-national-route-15",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Road"
+      ],
+      "description": "road in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1045667",
+        "url": "https://www.wikidata.org/wiki/Q1045667"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4d1",
+      "name": "Japan National Route 4",
+      "slug": "japan-national-route-4",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Road"
+      ],
+      "description": "Japanese National Highway from Chuo-ku, Tokyo to Aomori, Aomori Prefecture",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1055023",
+        "url": "https://www.wikidata.org/wiki/Q1055023"
+      }
+    },
+    {
+      "id": "699a31c27824af0589553dbd",
+      "name": "Kamata Station",
+      "slug": "kamata-station",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "railway station in Ota, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q800981",
+        "url": "https://www.wikidata.org/wiki/Q800981"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4c2",
+      "name": "Kappabashi-dōri",
+      "slug": "kappabashi-dori",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Architectural Structure",
+        "Road"
+      ],
+      "description": "street in Tokyo known for shops that sell restaurant supplies",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2977163",
+        "url": "https://www.wikidata.org/wiki/Q2977163"
+      }
+    },
+    {
+      "id": "69b4691d5c052622bb57c70c",
+      "name": "Kōkyogaien",
+      "slug": "kokyogaien",
+      "type": "experience",
+      "priority": 38,
+      "categories": [],
+      "description": "town located in Chiyoda-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q844963",
+        "url": "https://www.wikidata.org/wiki/Q844963"
+      }
+    },
+    {
+      "id": "69b4691d5c052622bb57c6ee",
+      "name": "Meguro River",
+      "slug": "meguro-river",
+      "type": "experience",
+      "priority": 38,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q8010297",
+        "url": "https://www.wikidata.org/wiki/Q8010297"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4e5",
+      "name": "Mitsui Memorial Museum",
+      "slug": "mitsui-memorial-museum",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Museum"
+      ],
+      "description": "art museum",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q864700",
+        "url": "https://www.wikidata.org/wiki/Q864700"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4d7",
+      "name": "NEC Supertower",
+      "slug": "nec-supertower",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "skyscraper",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1621350",
+        "url": "https://www.wikidata.org/wiki/Q1621350"
+      }
+    },
+    {
+      "id": "699a096eff031f7c6096f506",
+      "name": "Nogi Shrine",
+      "slug": "nogi-shrine",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3342690",
+        "url": "https://www.wikidata.org/wiki/Q3342690"
+      }
+    },
+    {
+      "id": "69b4691d5c052622bb57c6fd",
+      "name": "Odaiba Marine Park",
+      "slug": "odaiba-marine-park",
+      "type": "experience",
+      "priority": 38,
+      "categories": [],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5368576",
+        "url": "https://www.wikidata.org/wiki/Q5368576"
+      }
+    },
+    {
+      "id": "699a31c17824af0589553d6f",
+      "name": "Oi Hockey Stadium",
+      "slug": "oi-hockey-stadium",
+      "type": "place",
+      "priority": 38,
+      "categories": [],
+      "description": "hockey stadium in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q65242048",
+        "url": "https://www.wikidata.org/wiki/Q65242048"
+      }
+    },
+    {
+      "id": "699a096eff031f7c6096f530",
+      "name": "Owl Tower",
+      "slug": "owl-tower",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Skyscraper"
+      ],
+      "description": "residential skyscraper in Higashi-ikebukuro, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: notable skyscraper"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q22117706",
+        "url": "https://www.wikidata.org/wiki/Q22117706"
+      }
+    },
+    {
+      "id": "699a096fff031f7c6096f549",
+      "name": "Tokyo Dome City",
+      "slug": "tokyo-dome-city",
+      "type": "place",
+      "priority": 38,
+      "categories": [],
+      "description": "entertainment complex in Bunkyo, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q564554",
+        "url": "https://www.wikidata.org/wiki/Q564554"
+      }
+    },
+    {
+      "id": "699a096dff031f7c6096f4b3",
+      "name": "Tokyo Metro Museum",
+      "slug": "tokyo-metro-museum",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "railway museum in Edogawa, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11424081",
+        "url": "https://www.wikidata.org/wiki/Q11424081"
+      }
+    },
+    {
+      "id": "699a096eff031f7c6096f527",
+      "name": "Tokyo Metropolitan Theatre",
+      "slug": "tokyo-metropolitan-theatre",
+      "type": "place",
+      "priority": 38,
+      "categories": [
+        "Theater"
+      ],
+      "description": "building in Toshima-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1956181",
+        "url": "https://www.wikidata.org/wiki/Q1956181"
+      }
+    },
+    {
+      "id": "69b4691d5c052622bb57c74f",
+      "name": "Ameya-Yokochō",
+      "slug": "ameya-yokocho",
+      "type": "experience",
+      "priority": 37,
+      "categories": [],
+      "description": "open-air market in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q864815",
+        "url": "https://www.wikidata.org/wiki/Q864815"
+      }
+    },
+    {
+      "id": "69b4691d5c052622bb57c739",
+      "name": "Hanayashiki",
+      "slug": "hanayashiki",
+      "type": "experience",
+      "priority": 37,
+      "categories": [
+        "Amusement Park"
+      ],
+      "description": "amusement park in Asakusa, Taitō, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q863180",
+        "url": "https://www.wikidata.org/wiki/Q863180"
+      }
+    },
+    {
+      "id": "699a0970ff031f7c6096f57e",
+      "name": "Kan'ei-ji Temple",
+      "slug": "kanei-ji-temple",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "Shrine",
+        "Architectural Structure"
+      ],
+      "description": "Buddhist temple in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3120766",
+        "url": "https://www.wikidata.org/wiki/Q3120766"
+      }
+    },
+    {
+      "id": "699a31c27824af0589553dde",
+      "name": "Keikyū Kamata Station",
+      "slug": "keikyu-kamata-station",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "railway station in Ōta-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q841552",
+        "url": "https://www.wikidata.org/wiki/Q841552"
+      }
+    },
+    {
+      "id": "699a0970ff031f7c6096f592",
+      "name": "Kiyosumi Garden",
+      "slug": "kiyosumi-garden",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "Garden",
+        "Park"
+      ],
+      "description": "traditional Japanese stroll garden located in Fukagawa, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4388146",
+        "url": "https://www.wikidata.org/wiki/Q4388146"
+      }
+    },
+    {
+      "id": "699a096fff031f7c6096f55e",
+      "name": "Musashinonomori Park",
+      "slug": "musashinonomori-park",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11546385",
+        "url": "https://www.wikidata.org/wiki/Q11546385"
+      }
+    },
+    {
+      "id": "699a0970ff031f7c6096f585",
+      "name": "Nihonbashi River",
+      "slug": "nihonbashi-river",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6854971",
+        "url": "https://www.wikidata.org/wiki/Q6854971"
+      }
+    },
+    {
+      "id": "699a0970ff031f7c6096f571",
+      "name": "Tama Cemetery",
+      "slug": "tama-cemetery",
+      "type": "place",
+      "priority": 37,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "cemetery in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable architectural structure"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q982473",
+        "url": "https://www.wikidata.org/wiki/Q982473"
+      }
+    },
+    {
+      "id": "69b4691f5c052622bb57c7bf",
+      "name": "Kiba Park",
+      "slug": "kiba-park",
+      "type": "experience",
+      "priority": 36,
+      "categories": [],
+      "description": "park in Koto-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6403923",
+        "url": "https://www.wikidata.org/wiki/Q6403923"
+      }
+    },
+    {
+      "id": "69b4691f5c052622bb57c7ac",
+      "name": "Kyu-Iwasaki-tei Garden",
+      "slug": "kyu-iwasaki-tei-garden",
+      "type": "experience",
+      "priority": 36,
+      "categories": [],
+      "description": "park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword garden"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1358767",
+        "url": "https://www.wikidata.org/wiki/Q1358767"
+      }
+    },
+    {
+      "id": "69b4691e5c052622bb57c778",
+      "name": "Mukōjima-Hyakkaen Garden",
+      "slug": "mukojima-hyakkaen-garden",
+      "type": "experience",
+      "priority": 36,
+      "categories": [],
+      "description": "flower garden located in Sumida, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword garden"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7076776",
+        "url": "https://www.wikidata.org/wiki/Q7076776"
+      }
+    },
+    {
+      "id": "69b4691e5c052622bb57c762",
+      "name": "Shibuya River",
+      "slug": "shibuya-river",
+      "type": "experience",
+      "priority": 36,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11561721",
+        "url": "https://www.wikidata.org/wiki/Q11561721"
+      }
+    },
+    {
+      "id": "69b4691e5c052622bb57c787",
+      "name": "Tokyo Dome City Attractions",
+      "slug": "tokyo-dome-city-attractions",
+      "type": "experience",
+      "priority": 36,
+      "categories": [
+        "Amusement Park"
+      ],
+      "description": "amusement park in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q564646",
+        "url": "https://www.wikidata.org/wiki/Q564646"
+      }
+    },
+    {
+      "id": "699a31c37824af0589553e46",
+      "name": "Tsurumi River",
+      "slug": "tsurumi-river",
+      "type": "place",
+      "priority": 36,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo and Kanagawa",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7850292",
+        "url": "https://www.wikidata.org/wiki/Q7850292"
+      }
+    },
+    {
+      "id": "699a31c27824af0589553e20",
+      "name": "Tōkyū Den'en-Toshi Line",
+      "slug": "tokyu-denen-toshi-line-2",
+      "type": "place",
+      "priority": 36,
+      "categories": [],
+      "description": "railway line in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": null
+    },
+    {
+      "id": "699a31c27824af0589553e1a",
+      "name": "Tōkyū Den'en-Toshi Line",
+      "slug": "tokyu-denen-toshi-line",
+      "type": "place",
+      "priority": 36,
+      "categories": [],
+      "description": "railway line in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1190086",
+        "url": "https://www.wikidata.org/wiki/Q1190086"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c7fb",
+      "name": "Arisugawa-no-miya Memorial Park",
+      "slug": "arisugawa-no-miya-memorial-park",
+      "type": "experience",
+      "priority": 35,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4791114",
+        "url": "https://www.wikidata.org/wiki/Q4791114"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c820",
+      "name": "Higo Hosakawa Garden",
+      "slug": "higo-hosakawa-garden",
+      "type": "experience",
+      "priority": 35,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword garden"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3162465",
+        "url": "https://www.wikidata.org/wiki/Q3162465"
+      }
+    },
+    {
+      "id": "69b4691f5c052622bb57c7d5",
+      "name": "Komazawa Olympic Park",
+      "slug": "komazawa-olympic-park",
+      "type": "experience",
+      "priority": 35,
+      "categories": [],
+      "description": "park located in Setagaya-ku and Meguro-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2021485",
+        "url": "https://www.wikidata.org/wiki/Q2021485"
+      }
+    },
+    {
+      "id": "69b4691f5c052622bb57c7e5",
+      "name": "Shakujii River",
+      "slug": "shakujii-river",
+      "type": "experience",
+      "priority": 35,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7487093",
+        "url": "https://www.wikidata.org/wiki/Q7487093"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c80a",
+      "name": "Sumida Park",
+      "slug": "sumida-park",
+      "type": "experience",
+      "priority": 35,
+      "categories": [],
+      "description": "public park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6630114",
+        "url": "https://www.wikidata.org/wiki/Q6630114"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c833",
+      "name": "Tokyo Expressway",
+      "slug": "tokyo-expressway",
+      "type": "experience",
+      "priority": 35,
+      "categories": [
+        "Road"
+      ],
+      "description": "former expressway in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1714592",
+        "url": "https://www.wikidata.org/wiki/Q1714592"
+      }
+    },
+    {
+      "id": "699a31c47824af0589553ea6",
+      "name": "Ikegami Honmon-ji Temple",
+      "slug": "ikegami-honmon-ji-temple",
+      "type": "place",
+      "priority": 34,
+      "categories": [
+        "Shrine"
+      ],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1537312",
+        "url": "https://www.wikidata.org/wiki/Q1537312"
+      }
+    },
+    {
+      "id": "69b469215c052622bb57c87e",
+      "name": "Kansen-en Park",
+      "slug": "kansen-en-park",
+      "type": "experience",
+      "priority": 34,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4404489",
+        "url": "https://www.wikidata.org/wiki/Q4404489"
+      }
+    },
+    {
+      "id": "69b469225c052622bb57c8b6",
+      "name": "Kidzania Tokyo",
+      "slug": "kidzania-tokyo",
+      "type": "experience",
+      "priority": 34,
+      "categories": [
+        "Amusement Park"
+      ],
+      "description": "family edutainment center amusement park",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5363436",
+        "url": "https://www.wikidata.org/wiki/Q5363436"
+      }
+    },
+    {
+      "id": "69b469215c052622bb57c8a7",
+      "name": "Kyu-Furukawa Gardens",
+      "slug": "kyu-furukawa-gardens",
+      "type": "experience",
+      "priority": 34,
+      "categories": [],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3082256",
+        "url": "https://www.wikidata.org/wiki/Q3082256"
+      }
+    },
+    {
+      "id": "69b469215c052622bb57c891",
+      "name": "Shinagawa-juku",
+      "slug": "shinagawa-juku",
+      "type": "experience",
+      "priority": 34,
+      "categories": [],
+      "description": "station of the Tōkaidō, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3133266",
+        "url": "https://www.wikidata.org/wiki/Q3133266"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c846",
+      "name": "Tokyo Sea Life Park",
+      "slug": "tokyo-sea-life-park",
+      "type": "experience",
+      "priority": 34,
+      "categories": [
+        "Aquarium"
+      ],
+      "description": "public aquarium in Edogawa-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category aquarium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4925165",
+        "url": "https://www.wikidata.org/wiki/Q4925165"
+      }
+    },
+    {
+      "id": "699a31c47824af0589553e86",
+      "name": "Tomei Expressway",
+      "slug": "tomei-expressway",
+      "type": "place",
+      "priority": 34,
+      "categories": [
+        "Road"
+      ],
+      "description": "expressway in Tokyo, Kanagawa, Shizuoka and Aichi Prefectures, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1135694",
+        "url": "https://www.wikidata.org/wiki/Q1135694"
+      }
+    },
+    {
+      "id": "69b469215c052622bb57c86e",
+      "name": "Yumenoshima Stadium",
+      "slug": "yumenoshima-stadium",
+      "type": "experience",
+      "priority": 34,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "building in Yumenoshima, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q8061098",
+        "url": "https://www.wikidata.org/wiki/Q8061098"
+      }
+    },
+    {
+      "id": "69b469205c052622bb57c85c",
+      "name": "Zōshigaya Cemetery",
+      "slug": "zoshigaya-cemetery",
+      "type": "experience",
+      "priority": 34,
+      "categories": [],
+      "description": "cemetery in Toshima, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1457455",
+        "url": "https://www.wikidata.org/wiki/Q1457455"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c9c3",
+      "name": "Comic Takaoka",
+      "slug": "comic-takaoka",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "former manga store in Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85871305",
+        "url": "https://www.wikidata.org/wiki/Q85871305"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c98f",
+      "name": "Jōkan-ji Temple",
+      "slug": "jokan-ji-temple",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10895707",
+        "url": "https://www.wikidata.org/wiki/Q10895707"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c948",
+      "name": "Kamezuka Park",
+      "slug": "kamezuka-park",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "children's park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q458122",
+        "url": "https://www.wikidata.org/wiki/Q458122"
+      }
+    },
+    {
+      "id": "69b469225c052622bb57c8de",
+      "name": "Kinuta Park",
+      "slug": "kinuta-park",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "town located in Setagaya-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4388776",
+        "url": "https://www.wikidata.org/wiki/Q4388776"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c974",
+      "name": "Maruyama Shrine",
+      "slug": "maruyama-shrine",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3296031",
+        "url": "https://www.wikidata.org/wiki/Q3296031"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c965",
+      "name": "Meiji Jingu Gaien Stadium",
+      "slug": "meiji-jingu-gaien-stadium",
+      "type": "experience",
+      "priority": 33,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "demolished stadium in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: notable stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6810037",
+        "url": "https://www.wikidata.org/wiki/Q6810037"
+      }
+    },
+    {
+      "id": "69b469265c052622bb57c9fc",
+      "name": "Ni-Tele Really Big Clock",
+      "slug": "ni-tele-really-big-clock",
+      "type": "experience",
+      "priority": 33,
+      "categories": [
+        "Sculpture"
+      ],
+      "description": "large clock and sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q76843738",
+        "url": "https://www.wikidata.org/wiki/Q76843738"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c9d6",
+      "name": "Nissay Theatre",
+      "slug": "nissay-theatre",
+      "type": "experience",
+      "priority": 33,
+      "categories": [
+        "Theater"
+      ],
+      "description": "theater in Chiyoda Ward, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4473948",
+        "url": "https://www.wikidata.org/wiki/Q4473948"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c99e",
+      "name": "Palette Town",
+      "slug": "palette-town",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "shopping mall and entertainment complex in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11280640",
+        "url": "https://www.wikidata.org/wiki/Q11280640"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c932",
+      "name": "Sarue-onshi Park",
+      "slug": "sarue-onshi-park",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6630094",
+        "url": "https://www.wikidata.org/wiki/Q6630094"
+      }
+    },
+    {
+      "id": "69b469225c052622bb57c8cf",
+      "name": "Shakujii Park",
+      "slug": "shakujii-park",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4388784",
+        "url": "https://www.wikidata.org/wiki/Q4388784"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c9dc",
+      "name": "Shinbashi Enbujō",
+      "slug": "shinbashi-enbujo",
+      "type": "experience",
+      "priority": 33,
+      "categories": [
+        "Theater"
+      ],
+      "description": "Kabuki and variety theatre in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4410425",
+        "url": "https://www.wikidata.org/wiki/Q4410425"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c956",
+      "name": "Sumida Aquarium",
+      "slug": "sumida-aquarium",
+      "type": "experience",
+      "priority": 33,
+      "categories": [
+        "Aquarium"
+      ],
+      "description": "zoo in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category aquarium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q8134074",
+        "url": "https://www.wikidata.org/wiki/Q8134074"
+      }
+    },
+    {
+      "id": "69b469245c052622bb57c9ad",
+      "name": "Yumenoshima Tropical Greenhouse Dome",
+      "slug": "yumenoshima-tropical-greenhouse-dome",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "botanical garden in Koto City, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4388023",
+        "url": "https://www.wikidata.org/wiki/Q4388023"
+      }
+    },
+    {
+      "id": "69b469235c052622bb57c92a",
+      "name": "Ōi Futō Chūō Kaihin Park",
+      "slug": "oi-futo-chuo-kaihin-park",
+      "type": "experience",
+      "priority": 33,
+      "categories": [],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11432120",
+        "url": "https://www.wikidata.org/wiki/Q11432120"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57caa5",
+      "name": "Akamon",
+      "slug": "akamon",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "historical Japanese gate",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q48807898",
+        "url": "https://www.wikidata.org/wiki/Q48807898"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57caad",
+      "name": "Fushimi Sanpō Inari Shrine",
+      "slug": "fushimi-sanpo-inari-shrine",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q1442645",
+        "url": "https://www.wikidata.org/wiki/Q1442645"
+      }
+    },
+    {
+      "id": "69b469265c052622bb57ca1f",
+      "name": "Mizumoto Park",
+      "slug": "mizumoto-park",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "park and town located in Katsushika-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3541303",
+        "url": "https://www.wikidata.org/wiki/Q3541303"
+      }
+    },
+    {
+      "id": "69b469275c052622bb57ca4c",
+      "name": "Nishigaoka Soccer Stadium",
+      "slug": "nishigaoka-soccer-stadium",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "building in Nishigaoka, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7040543",
+        "url": "https://www.wikidata.org/wiki/Q7040543"
+      }
+    },
+    {
+      "id": "69b469275c052622bb57ca5f",
+      "name": "Panasonic Globe Theatre",
+      "slug": "panasonic-globe-theatre",
+      "type": "experience",
+      "priority": 32,
+      "categories": [
+        "Theater"
+      ],
+      "description": "Shakespearean theatre in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4474025",
+        "url": "https://www.wikidata.org/wiki/Q4474025"
+      }
+    },
+    {
+      "id": "69b469275c052622bb57ca72",
+      "name": "Shinjuku Niagara Falls",
+      "slug": "shinjuku-niagara-falls",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "fountain in Shinjuku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q78491509",
+        "url": "https://www.wikidata.org/wiki/Q78491509"
+      }
+    },
+    {
+      "id": "69b469275c052622bb57ca6c",
+      "name": "Somei Cemetery",
+      "slug": "somei-cemetery",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "cemetery in Toshima-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword cemetery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11533893",
+        "url": "https://www.wikidata.org/wiki/Q11533893"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57ca92",
+      "name": "Tokyo Daijingu",
+      "slug": "tokyo-daijingu",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11524717",
+        "url": "https://www.wikidata.org/wiki/Q11524717"
+      }
+    },
+    {
+      "id": "69b469275c052622bb57ca7f",
+      "name": "Tokyo Ten Shrines",
+      "slug": "tokyo-ten-shrines",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "List of ten important shrines of Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q164895",
+        "url": "https://www.wikidata.org/wiki/Q164895"
+      }
+    },
+    {
+      "id": "69b469265c052622bb57ca09",
+      "name": "Toshimaen",
+      "slug": "toshimaen",
+      "type": "experience",
+      "priority": 32,
+      "categories": [
+        "Amusement Park"
+      ],
+      "description": "former amusement park in Nerima, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q423559",
+        "url": "https://www.wikidata.org/wiki/Q423559"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57ca98",
+      "name": "Yokoamichō Park",
+      "slug": "yokoamicho-park",
+      "type": "experience",
+      "priority": 32,
+      "categories": [],
+      "description": "Public park and memorial in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6941729",
+        "url": "https://www.wikidata.org/wiki/Q6941729"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57cacc",
+      "name": "Asakusa International Theater",
+      "slug": "asakusa-international-theater",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q9032201",
+        "url": "https://www.wikidata.org/wiki/Q9032201"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cae5",
+      "name": "Daiba Park",
+      "slug": "daiba-park",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "park in Minato, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6147955",
+        "url": "https://www.wikidata.org/wiki/Q6147955"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cb01",
+      "name": "Decks Tokyo Beach",
+      "slug": "decks-tokyo-beach",
+      "type": "experience",
+      "priority": 31,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5368568",
+        "url": "https://www.wikidata.org/wiki/Q5368568"
+      }
+    },
+    {
+      "id": "699a31c67824af0589553f93",
+      "name": "Hasegawa Machiko Art Museum",
+      "slug": "hasegawa-machiko-art-museum",
+      "type": "place",
+      "priority": 31,
+      "categories": [
+        "Museum"
+      ],
+      "description": "museum in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3788646",
+        "url": "https://www.wikidata.org/wiki/Q3788646"
+      }
+    },
+    {
+      "id": "699a31c77824af0589553fe7",
+      "name": "Japan National Route 466",
+      "slug": "japan-national-route-466",
+      "type": "place",
+      "priority": 31,
+      "categories": [
+        "Road"
+      ],
+      "description": "road in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11421469",
+        "url": "https://www.wikidata.org/wiki/Q11421469"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57caeb",
+      "name": "Kisshō-ji Temple",
+      "slug": "kissho-ji-temple",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3197507",
+        "url": "https://www.wikidata.org/wiki/Q3197507"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cb08",
+      "name": "Mega Web",
+      "slug": "mega-web",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "car theme park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10854652",
+        "url": "https://www.wikidata.org/wiki/Q10854652"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cadf",
+      "name": "Nippon Seinenkan",
+      "slug": "nippon-seinenkan",
+      "type": "experience",
+      "priority": 31,
+      "categories": [
+        "Theater"
+      ],
+      "description": "theater in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q657896",
+        "url": "https://www.wikidata.org/wiki/Q657896"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57cad8",
+      "name": "Small Worlds",
+      "slug": "small-worlds",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "theme park",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q30926669",
+        "url": "https://www.wikidata.org/wiki/Q30926669"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cb0f",
+      "name": "Teppōzu Inari Shrine",
+      "slug": "teppozu-inari-shrine",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11651343",
+        "url": "https://www.wikidata.org/wiki/Q11651343"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57cabf",
+      "name": "Tetsugaku-dō Park",
+      "slug": "tetsugaku-do-park",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "park in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q9087421",
+        "url": "https://www.wikidata.org/wiki/Q9087421"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57caf5",
+      "name": "Tokyo Kōsei Nenkin Kaikan",
+      "slug": "tokyo-kosei-nenkin-kaikan",
+      "type": "experience",
+      "priority": 31,
+      "categories": [
+        "Theater"
+      ],
+      "description": "concert hall in Shinjuku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7813925",
+        "url": "https://www.wikidata.org/wiki/Q7813925"
+      }
+    },
+    {
+      "id": "69b469285c052622bb57cad2",
+      "name": "Zenshō-an Temple",
+      "slug": "zensho-an-temple",
+      "type": "experience",
+      "priority": 31,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q9085733",
+        "url": "https://www.wikidata.org/wiki/Q9085733"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb60",
+      "name": "Aqua Park Shinagawa",
+      "slug": "aqua-park-shinagawa",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "Aquarium"
+      ],
+      "description": "Japanese public aquariums",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category aquarium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3055859",
+        "url": "https://www.wikidata.org/wiki/Q3055859"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb93",
+      "name": "Eitai Bridge",
+      "slug": "eitai-bridge",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "bridge over Sumida river in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11549876",
+        "url": "https://www.wikidata.org/wiki/Q11549876"
+      }
+    },
+    {
+      "id": "699a31c77824af058955402d",
+      "name": "Gotoh Museum",
+      "slug": "gotoh-museum",
+      "type": "place",
+      "priority": 30,
+      "categories": [],
+      "description": "art museum in Kaminoge Setagaya Tokyo Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description art museum"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2374140",
+        "url": "https://www.wikidata.org/wiki/Q2374140"
+      }
+    },
+    {
+      "id": "69b469295c052622bb57cb32",
+      "name": "Heiwa-no-Mori Park",
+      "slug": "heiwa-no-mori-park",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "town located in Ōta-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11286180",
+        "url": "https://www.wikidata.org/wiki/Q11286180"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cb9e",
+      "name": "Hibiya Open-Air Concert Hall",
+      "slug": "hibiya-open-air-concert-hall",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "Outdoor theater in Hibiya Park, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description theater in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11509589",
+        "url": "https://www.wikidata.org/wiki/Q11509589"
+      }
+    },
+    {
+      "id": "699a31c77824af0589554072",
+      "name": "Japan National Route 131",
+      "slug": "japan-national-route-131",
+      "type": "place",
+      "priority": 30,
+      "categories": [
+        "Road"
+      ],
+      "description": "road in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6156768",
+        "url": "https://www.wikidata.org/wiki/Q6156768"
+      }
+    },
+    {
+      "id": "69b4692b5c052622bb57cb49",
+      "name": "Jōhoku Chūō Park",
+      "slug": "johoku-chuo-park",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "park in Nerima city and Itabashi city, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11271573",
+        "url": "https://www.wikidata.org/wiki/Q11271573"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbba",
+      "name": "Kachidoki Bridge",
+      "slug": "kachidoki-bridge",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "combined bascule and arch bridge in Tokyo, over the Sumida River.",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q4844361",
+        "url": "https://www.wikidata.org/wiki/Q4844361"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbce",
+      "name": "Korakuen Velodrome",
+      "slug": "korakuen-velodrome",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "velodrome in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6431378",
+        "url": "https://www.wikidata.org/wiki/Q6431378"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbb4",
+      "name": "Manseibashi",
+      "slug": "manseibashi",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "Bridge in Chiyoda, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2913480",
+        "url": "https://www.wikidata.org/wiki/Q2913480"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb73",
+      "name": "Myōshōji River",
+      "slug": "myoshoji-river",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11446931",
+        "url": "https://www.wikidata.org/wiki/Q11446931"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cba5",
+      "name": "Namiyoke Inari Shrine",
+      "slug": "namiyoke-inari-shrine",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3335477",
+        "url": "https://www.wikidata.org/wiki/Q3335477"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb80",
+      "name": "Ryūsen-ji Temple",
+      "slug": "ryusen-ji-temple",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "building in Shimo-Meguro, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6587237",
+        "url": "https://www.wikidata.org/wiki/Q6587237"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbae",
+      "name": "Sendaibori River",
+      "slug": "sendaibori-river",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3478521",
+        "url": "https://www.wikidata.org/wiki/Q3478521"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbd4",
+      "name": "Shiba Tōshō-gū",
+      "slug": "shiba-tosho-gu",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11614668",
+        "url": "https://www.wikidata.org/wiki/Q11614668"
+      }
+    },
+    {
+      "id": "69b4692b5c052622bb57cb56",
+      "name": "Shinjuku Koma Theater",
+      "slug": "shinjuku-koma-theater",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "former theater in Kabukichō, Shinjuku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q863451",
+        "url": "https://www.wikidata.org/wiki/Q863451"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbc8",
+      "name": "Shiodome River",
+      "slug": "shiodome-river",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11550515",
+        "url": "https://www.wikidata.org/wiki/Q11550515"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbc2",
+      "name": "St. Frances Xavier Church",
+      "slug": "st-frances-xavier-church",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11590603",
+        "url": "https://www.wikidata.org/wiki/Q11590603"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb66",
+      "name": "Sunshine Aquarium",
+      "slug": "sunshine-aquarium",
+      "type": "experience",
+      "priority": 30,
+      "categories": [
+        "Aquarium"
+      ],
+      "description": "aquarium in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category aquarium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11250698",
+        "url": "https://www.wikidata.org/wiki/Q11250698"
+      }
+    },
+    {
+      "id": "69b4692c5c052622bb57cb8d",
+      "name": "Yūten-ji Temple",
+      "slug": "yuten-ji-temple",
+      "type": "experience",
+      "priority": 30,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3087698",
+        "url": "https://www.wikidata.org/wiki/Q3087698"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cc2f",
+      "name": "Akiba Shrine",
+      "slug": "akiba-shrine",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11595842",
+        "url": "https://www.wikidata.org/wiki/Q11595842"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cc21",
+      "name": "Azuma Bridge",
+      "slug": "azuma-bridge",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "town located in Sumida-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q794294",
+        "url": "https://www.wikidata.org/wiki/Q794294"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc65",
+      "name": "Daishin-ji Temple",
+      "slug": "daishin-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q629966",
+        "url": "https://www.wikidata.org/wiki/Q629966"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cc0e",
+      "name": "Gojō Tenjinsha",
+      "slug": "gojo-tenjinsha",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Shinto shrine in Taito-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2115862",
+        "url": "https://www.wikidata.org/wiki/Q2115862"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc6b",
+      "name": "Gyoran-ji Temple",
+      "slug": "gyoran-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3122707",
+        "url": "https://www.wikidata.org/wiki/Q3122707"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc5f",
+      "name": "Kototoi Bridge",
+      "slug": "kototoi-bridge",
+      "type": "experience",
+      "priority": 29,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "bridge in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11630974",
+        "url": "https://www.wikidata.org/wiki/Q11630974"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cbf3",
+      "name": "Meiji Shrine Outer Garden",
+      "slug": "meiji-shrine-outer-garden",
+      "type": "experience",
+      "priority": 29,
+      "categories": [
+        "Park",
+        "Tourist Attraction"
+      ],
+      "description": "garden in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6631448",
+        "url": "https://www.wikidata.org/wiki/Q6631448"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc55",
+      "name": "Mita Hachiman Shrine",
+      "slug": "mita-hachiman-shrine",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo Prefecture, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q545397",
+        "url": "https://www.wikidata.org/wiki/Q545397"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cbed",
+      "name": "Nihonryori Ryugin",
+      "slug": "nihonryori-ryugin",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "restaurant in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7034331",
+        "url": "https://www.wikidata.org/wiki/Q7034331"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc78",
+      "name": "Ogasawara-Hakushaku-Tei",
+      "slug": "ogasawara-hakushaku-tei",
+      "type": "experience",
+      "priority": 29,
+      "categories": [
+        "Historic Site",
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11463332",
+        "url": "https://www.wikidata.org/wiki/Q11463332"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc85",
+      "name": "Ryūgen-ji Temple",
+      "slug": "ryugen-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "temple in Kameido, Koto-ku",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q64015472",
+        "url": "https://www.wikidata.org/wiki/Q64015472"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc4f",
+      "name": "Saikai-ji Temple",
+      "slug": "saikai-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3461609",
+        "url": "https://www.wikidata.org/wiki/Q3461609"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc49",
+      "name": "Sumidagawa bridge",
+      "slug": "sumidagawa-bridge",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "railway bridge on the Tobu railway in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11658848",
+        "url": "https://www.wikidata.org/wiki/Q11658848"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc8b",
+      "name": "Takanawa Imperial Residence",
+      "slug": "takanawa-imperial-residence",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Japanese imperial residence",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q38255023",
+        "url": "https://www.wikidata.org/wiki/Q38255023"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cbfa",
+      "name": "Tokyo Skytree Town",
+      "slug": "tokyo-skytree-town",
+      "type": "experience",
+      "priority": 29,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11524181",
+        "url": "https://www.wikidata.org/wiki/Q11524181"
+      }
+    },
+    {
+      "id": "69b4692d5c052622bb57cbe7",
+      "name": "Toneri Park",
+      "slug": "toneri-park",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "town located in Adachi-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3567665",
+        "url": "https://www.wikidata.org/wiki/Q3567665"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cc14",
+      "name": "Velfarre",
+      "slug": "velfarre",
+      "type": "experience",
+      "priority": 29,
+      "categories": [
+        "Nightclub"
+      ],
+      "description": "disco located in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category nightclub"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7918905",
+        "url": "https://www.wikidata.org/wiki/Q7918905"
+      }
+    },
+    {
+      "id": "69b4692e5c052622bb57cc07",
+      "name": "Zenkoku-ji Temple",
+      "slug": "zenkoku-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11418909",
+        "url": "https://www.wikidata.org/wiki/Q11418909"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc91",
+      "name": "Zenkō-ji Temple",
+      "slug": "zenko-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Buddhist temple in Minato-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q48519399",
+        "url": "https://www.wikidata.org/wiki/Q48519399"
+      }
+    },
+    {
+      "id": "69b4692f5c052622bb57cc3c",
+      "name": "Zenpuku-ji Temple",
+      "slug": "zenpuku-ji-temple",
+      "type": "experience",
+      "priority": 29,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3575225",
+        "url": "https://www.wikidata.org/wiki/Q3575225"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57ccdb",
+      "name": "Bairin-ji Temple",
+      "slug": "bairin-ji-temple",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Buddhist temple in Taito-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q803939",
+        "url": "https://www.wikidata.org/wiki/Q803939"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57cce1",
+      "name": "Dream Bridge",
+      "slug": "dream-bridge",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "bridge in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q77080520",
+        "url": "https://www.wikidata.org/wiki/Q77080520"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd56",
+      "name": "Edobashi",
+      "slug": "edobashi",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "bridge in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11551096",
+        "url": "https://www.wikidata.org/wiki/Q11551096"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57ccc8",
+      "name": "Godzilla head",
+      "slug": "godzilla-head",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Sculpture"
+      ],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85763829",
+        "url": "https://www.wikidata.org/wiki/Q85763829"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd07",
+      "name": "Jingu Bashi",
+      "slug": "jingu-bashi",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Bridge",
+        "Tourist Attraction"
+      ],
+      "description": "bridge tourist attraction",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11589493",
+        "url": "https://www.wikidata.org/wiki/Q11589493"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57cce7",
+      "name": "Koyasan Tokyo Betsu-in Temple",
+      "slug": "koyasan-tokyo-betsu-in-temple",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6435146",
+        "url": "https://www.wikidata.org/wiki/Q6435146"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd14",
+      "name": "Kōgan-ji Temple",
+      "slug": "kogan-ji-temple",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "building in Toshima-ku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6587321",
+        "url": "https://www.wikidata.org/wiki/Q6587321"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd76",
+      "name": "Matsumotoro",
+      "slug": "matsumotoro",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11104500",
+        "url": "https://www.wikidata.org/wiki/Q11104500"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd6f",
+      "name": "Minamitaka Bridge",
+      "slug": "minamitaka-bridge",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "bridge in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11408792",
+        "url": "https://www.wikidata.org/wiki/Q11408792"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd41",
+      "name": "Nihonbashi",
+      "slug": "nihonbashi",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "bridge located in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q100930819",
+        "url": "https://www.wikidata.org/wiki/Q100930819"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd7c",
+      "name": "Nijūbashi",
+      "slug": "nijubashi",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "bridge in Imperial Palace, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q17211768",
+        "url": "https://www.wikidata.org/wiki/Q17211768"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd1a",
+      "name": "Sarugakuchō",
+      "slug": "sarugakucho",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "neighbourhood in Shibuya-ku, Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11572118",
+        "url": "https://www.wikidata.org/wiki/Q11572118"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd68",
+      "name": "Shōmonzuka",
+      "slug": "shomonzuka",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11482436",
+        "url": "https://www.wikidata.org/wiki/Q11482436"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd02",
+      "name": "Statue of Unicorn Gundam",
+      "slug": "statue-of-unicorn-gundam",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q80704016",
+        "url": "https://www.wikidata.org/wiki/Q80704016"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57ccce",
+      "name": "Takanawa Shrine",
+      "slug": "takanawa-shrine",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3514174",
+        "url": "https://www.wikidata.org/wiki/Q3514174"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57ccfb",
+      "name": "Takashimaya Times Square",
+      "slug": "takashimaya-times-square",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2109853",
+        "url": "https://www.wikidata.org/wiki/Q2109853"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd4f",
+      "name": "Tokiwa Bridge",
+      "slug": "tokiwa-bridge",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "bridge in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11481526",
+        "url": "https://www.wikidata.org/wiki/Q11481526"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57cced",
+      "name": "VenusFort",
+      "slug": "venusfort",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6602400",
+        "url": "https://www.wikidata.org/wiki/Q6602400"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd5c",
+      "name": "Wadakura Bridge",
+      "slug": "wadakura-bridge",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Bridge in Chiyoda, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q65252239",
+        "url": "https://www.wikidata.org/wiki/Q65252239"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd27",
+      "name": "Womb",
+      "slug": "womb",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Nightclub"
+      ],
+      "description": "Nightclub located in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category nightclub"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q111627",
+        "url": "https://www.wikidata.org/wiki/Q111627"
+      }
+    },
+    {
+      "id": "69b469315c052622bb57cd34",
+      "name": "Yaesu Shopping Mall",
+      "slug": "yaesu-shopping-mall",
+      "type": "experience",
+      "priority": 28,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10892516",
+        "url": "https://www.wikidata.org/wiki/Q10892516"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd62",
+      "name": "Yūrakuchō Center Building",
+      "slug": "yurakucho-center-building",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11264391",
+        "url": "https://www.wikidata.org/wiki/Q11264391"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57cc9e",
+      "name": "Zenyōmitsu-ji Temple",
+      "slug": "zenyomitsu-ji-temple",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3575233",
+        "url": "https://www.wikidata.org/wiki/Q3575233"
+      }
+    },
+    {
+      "id": "69b469305c052622bb57ccbb",
+      "name": "Ōmiya Hachiman Shrine",
+      "slug": "omiya-hachiman-shrine",
+      "type": "experience",
+      "priority": 28,
+      "categories": [],
+      "description": "Shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10934922",
+        "url": "https://www.wikidata.org/wiki/Q10934922"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cddc",
+      "name": "Akiba Tolim",
+      "slug": "akiba-tolim",
+      "type": "experience",
+      "priority": 27,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11257139",
+        "url": "https://www.wikidata.org/wiki/Q11257139"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cda4",
+      "name": "Edogawa Stadium",
+      "slug": "edogawa-stadium",
+      "type": "experience",
+      "priority": 27,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "building in Seishincho, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword stadium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5340173",
+        "url": "https://www.wikidata.org/wiki/Q5340173"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57ce01",
+      "name": "Fukagawa Fudōson",
+      "slug": "fukagawa-fudoson",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11495650",
+        "url": "https://www.wikidata.org/wiki/Q11495650"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cde6",
+      "name": "Hijiri-bashi bridge",
+      "slug": "hijiri-bashi-bridge",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "bridge in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11611065",
+        "url": "https://www.wikidata.org/wiki/Q11611065"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cdf4",
+      "name": "Hirakawa-tenmangu",
+      "slug": "hirakawa-tenmangu",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q55532887",
+        "url": "https://www.wikidata.org/wiki/Q55532887"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cdc7",
+      "name": "Karasumori Shrine",
+      "slug": "karasumori-shrine",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11567255",
+        "url": "https://www.wikidata.org/wiki/Q11567255"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cd97",
+      "name": "Kasai Shrine",
+      "slug": "kasai-shrine",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3193657",
+        "url": "https://www.wikidata.org/wiki/Q3193657"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cdce",
+      "name": "Kiyosu Bridge",
+      "slug": "kiyosu-bridge",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "suspension bridge over the Sumida River in Tokyo.",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11561268",
+        "url": "https://www.wikidata.org/wiki/Q11561268"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cded",
+      "name": "Kudan Kaikan",
+      "slug": "kudan-kaikan",
+      "type": "experience",
+      "priority": 27,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10878907",
+        "url": "https://www.wikidata.org/wiki/Q10878907"
+      }
+    },
+    {
+      "id": "699a31ca7824af05895541b5",
+      "name": "Nogawa River",
+      "slug": "nogawa-river",
+      "type": "place",
+      "priority": 27,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11645427",
+        "url": "https://www.wikidata.org/wiki/Q11645427"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57ce0e",
+      "name": "Reigan-ji Temple",
+      "slug": "reigan-ji-temple",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11660727",
+        "url": "https://www.wikidata.org/wiki/Q11660727"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57ce1a",
+      "name": "Rinshō-in Temple",
+      "slug": "rinsho-in-temple",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11677380",
+        "url": "https://www.wikidata.org/wiki/Q11677380"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce33",
+      "name": "Shiba Maruyama Kofun",
+      "slug": "shiba-maruyama-kofun",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword kofun"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11614601",
+        "url": "https://www.wikidata.org/wiki/Q11614601"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce4b",
+      "name": "Shitaya Shrine",
+      "slug": "shitaya-shrine",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11361339",
+        "url": "https://www.wikidata.org/wiki/Q11361339"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce3e",
+      "name": "Statue of Kanō Jigorō, Bunkyō",
+      "slug": "statue-of-kano-jigoro-bunkyo",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85847335",
+        "url": "https://www.wikidata.org/wiki/Q85847335"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce26",
+      "name": "Sushi Saito",
+      "slug": "sushi-saito",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Japanese cuisine restaurant in Minato, Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q7648919",
+        "url": "https://www.wikidata.org/wiki/Q7648919"
+      }
+    },
+    {
+      "id": "69b469325c052622bb57cdab",
+      "name": "Takebashi",
+      "slug": "takebashi",
+      "type": "experience",
+      "priority": 27,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "road bridge in Chiyoda, Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: minor bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11599266",
+        "url": "https://www.wikidata.org/wiki/Q11599266"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57ce20",
+      "name": "Tokyo Memorial Hall",
+      "slug": "tokyo-memorial-hall",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword memorial"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11525324",
+        "url": "https://www.wikidata.org/wiki/Q11525324"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce2c",
+      "name": "Toyokawa Inari Betsu-in Temple",
+      "slug": "toyokawa-inari-betsu-in-temple",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Buddhist temple of the Sōtō sect dedicated to Dakini in Moto-Akasaka, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11633647",
+        "url": "https://www.wikidata.org/wiki/Q11633647"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57cdb9",
+      "name": "Yanagimori Shrine",
+      "slug": "yanagimori-shrine",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q55532885",
+        "url": "https://www.wikidata.org/wiki/Q55532885"
+      }
+    },
+    {
+      "id": "69b469335c052622bb57ce14",
+      "name": "Ōzeki Stone",
+      "slug": "ozeki-stone",
+      "type": "experience",
+      "priority": 27,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11439876",
+        "url": "https://www.wikidata.org/wiki/Q11439876"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57cea4",
+      "name": "Asakusa Rockza",
+      "slug": "asakusa-rockza",
+      "type": "experience",
+      "priority": 26,
+      "categories": [
+        "Theater"
+      ],
+      "description": "strip club in Asakusa, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11350472",
+        "url": "https://www.wikidata.org/wiki/Q11350472"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce6c",
+      "name": "Egota River",
+      "slug": "egota-river",
+      "type": "experience",
+      "priority": 26,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Tokyo",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11550784",
+        "url": "https://www.wikidata.org/wiki/Q11550784"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ceaa",
+      "name": "Haniwa Armored Man",
+      "slug": "haniwa-armored-man",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "warrior Haniwa from Gunma Prefecture",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q91239334",
+        "url": "https://www.wikidata.org/wiki/Q91239334"
+      }
+    },
+    {
+      "id": "69b469345c052622bb57ce66",
+      "name": "Jindai-ji Temple",
+      "slug": "jindai-ji-temple",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "temple of Tendai Buddhism in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q500736",
+        "url": "https://www.wikidata.org/wiki/Q500736"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ce7f",
+      "name": "Juliana's",
+      "slug": "julianas",
+      "type": "experience",
+      "priority": 26,
+      "categories": [
+        "Nightclub"
+      ],
+      "description": "building in Shibaura, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category nightclub"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6307722",
+        "url": "https://www.wikidata.org/wiki/Q6307722"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57ceb5",
+      "name": "Statue of Kanō Jigorō, Shinjuku",
+      "slug": "statue-of-kano-jigoro-shinjuku",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85847336",
+        "url": "https://www.wikidata.org/wiki/Q85847336"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ceb0",
+      "name": "Statue of Pierre de Coubertin, Tokyo",
+      "slug": "statue-of-pierre-de-coubertin-tokyo",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85847340",
+        "url": "https://www.wikidata.org/wiki/Q85847340"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ce91",
+      "name": "Takahashi Korekiyo Memorial Park",
+      "slug": "takahashi-korekiyo-memorial-park",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "park in Minato, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11671321",
+        "url": "https://www.wikidata.org/wiki/Q11671321"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57ceba",
+      "name": "Takanawa Great Wooden Gate",
+      "slug": "takanawa-great-wooden-gate",
+      "type": "experience",
+      "priority": 26,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword gate"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11672880",
+        "url": "https://www.wikidata.org/wiki/Q11672880"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ce84",
+      "name": "Tokyo Solamachi",
+      "slug": "tokyo-solamachi",
+      "type": "experience",
+      "priority": 26,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "shopping center in Sumida, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11235194",
+        "url": "https://www.wikidata.org/wiki/Q11235194"
+      }
+    },
+    {
+      "id": "69b469355c052622bb57ce9e",
+      "name": "Yarai Noh Theater",
+      "slug": "yarai-noh-theater",
+      "type": "experience",
+      "priority": 26,
+      "categories": [
+        "Theater"
+      ],
+      "description": "Noh theatre in Shinjuku, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11584141",
+        "url": "https://www.wikidata.org/wiki/Q11584141"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57cedc",
+      "name": "Inokashira Park Zoo",
+      "slug": "inokashira-park-zoo",
+      "type": "experience",
+      "priority": 25,
+      "categories": [
+        "Zoo"
+      ],
+      "description": "zoo in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category zoo"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10860225",
+        "url": "https://www.wikidata.org/wiki/Q10860225"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57ceef",
+      "name": "Kuhonbutsu Jōshin-ji Temple",
+      "slug": "kuhonbutsu-joshin-ji-temple",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "building in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11370077",
+        "url": "https://www.wikidata.org/wiki/Q11370077"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf15",
+      "name": "Lumine Est",
+      "slug": "lumine-est",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "station building in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10858350",
+        "url": "https://www.wikidata.org/wiki/Q10858350"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf2e",
+      "name": "Quintessence",
+      "slug": "quintessence",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "restaurant in Shinagawa-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q20982995",
+        "url": "https://www.wikidata.org/wiki/Q20982995"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57cefc",
+      "name": "Ribera Steakhouse",
+      "slug": "ribera-steakhouse",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "restaurant in Gotanda, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q15711857",
+        "url": "https://www.wikidata.org/wiki/Q15711857"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57cf0e",
+      "name": "Robot Restaurant",
+      "slug": "robot-restaurant",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "entertainment venue",
+      "keep": true,
+      "reasons": [
+        "keep: curated tourism place"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q65247692",
+        "url": "https://www.wikidata.org/wiki/Q65247692"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf1b",
+      "name": "Shinjuku ALTA",
+      "slug": "shinjuku-alta",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword shinjuku"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11501787",
+        "url": "https://www.wikidata.org/wiki/Q11501787"
+      }
+    },
+    {
+      "id": "699a31cc7824af058955429c",
+      "name": "Snoopy Museum Tokyo",
+      "slug": "snoopy-museum-tokyo",
+      "type": "place",
+      "priority": 25,
+      "categories": [],
+      "description": "museum in Machida, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description museum in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q24834461",
+        "url": "https://www.wikidata.org/wiki/Q24834461"
+      }
+    },
+    {
+      "id": "69b469365c052622bb57cf02",
+      "name": "Tokyo Ramen Kokugikan Mai",
+      "slug": "tokyo-ramen-kokugikan-mai",
+      "type": "experience",
+      "priority": 25,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11347767",
+        "url": "https://www.wikidata.org/wiki/Q11347767"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf5d",
+      "name": "Dentsū Shiki Theatre Umi",
+      "slug": "dentsu-shiki-theatre-umi",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Theater"
+      ],
+      "description": "theater in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11660645",
+        "url": "https://www.wikidata.org/wiki/Q11660645"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cf8f",
+      "name": "GinzaNovo",
+      "slug": "ginzanovo",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword ginza"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q24876140",
+        "url": "https://www.wikidata.org/wiki/Q24876140"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf57",
+      "name": "Hakuhinkan Theater",
+      "slug": "hakuhinkan-theater",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11408884",
+        "url": "https://www.wikidata.org/wiki/Q11408884"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfc6",
+      "name": "Isegen",
+      "slug": "isegen",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "building in Chiyoda-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11259411",
+        "url": "https://www.wikidata.org/wiki/Q11259411"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfc0",
+      "name": "Kanda Matsuya",
+      "slug": "kanda-matsuya",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "building in Chiyoda-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11590540",
+        "url": "https://www.wikidata.org/wiki/Q11590540"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfd3",
+      "name": "Kanda Yabusoba",
+      "slug": "kanda-yabusoba",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11264550",
+        "url": "https://www.wikidata.org/wiki/Q11264550"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfa2",
+      "name": "Kanze Noh Theater",
+      "slug": "kanze-noh-theater",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Theater"
+      ],
+      "description": "Noh theatre in Chūō, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q55529604",
+        "url": "https://www.wikidata.org/wiki/Q55529604"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf4d",
+      "name": "L'Osier",
+      "slug": "losier",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "restaurant in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q6455842",
+        "url": "https://www.wikidata.org/wiki/Q6455842"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf6f",
+      "name": "Marronnier Gate Ginza 1",
+      "slug": "marronnier-gate-ginza-1",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q24863239",
+        "url": "https://www.wikidata.org/wiki/Q24863239"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf69",
+      "name": "Mitsukoshi Theater",
+      "slug": "mitsukoshi-theater",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11357327",
+        "url": "https://www.wikidata.org/wiki/Q11357327"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cf9c",
+      "name": "Sarashina no Sato",
+      "slug": "sarashina-no-sato",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q24868511",
+        "url": "https://www.wikidata.org/wiki/Q24868511"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf52",
+      "name": "Shinkiraku",
+      "slug": "shinkiraku",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11501516",
+        "url": "https://www.wikidata.org/wiki/Q11501516"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf82",
+      "name": "Shintomi-za",
+      "slug": "shintomi-za",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11501889",
+        "url": "https://www.wikidata.org/wiki/Q11501889"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf63",
+      "name": "Statue of Inoue Masaru",
+      "slug": "statue-of-inoue-masaru",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q77082641",
+        "url": "https://www.wikidata.org/wiki/Q77082641"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfb5",
+      "name": "Statue of Shinran, Tokyo",
+      "slug": "statue-of-shinran-tokyo",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "sculpture in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description sculpture in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q80703780",
+        "url": "https://www.wikidata.org/wiki/Q80703780"
+      }
+    },
+    {
+      "id": "69b469375c052622bb57cf3a",
+      "name": "Tōsen-ji Temple",
+      "slug": "tosen-ji-temple",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "Buddhist temple in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description buddhist temple"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q97206336",
+        "url": "https://www.wikidata.org/wiki/Q97206336"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfba",
+      "name": "Yoshinoya Tsukiji",
+      "slug": "yoshinoya-tsukiji",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q60987045",
+        "url": "https://www.wikidata.org/wiki/Q60987045"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cf96",
+      "name": "Yoshiume Yoshichō-tei",
+      "slug": "yoshiume-yoshicho-tei",
+      "type": "experience",
+      "priority": 24,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q28685910",
+        "url": "https://www.wikidata.org/wiki/Q28685910"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfd9",
+      "name": "キッチン南海",
+      "slug": "キッチン南海",
+      "type": "experience",
+      "priority": 24,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q28683368",
+        "url": "https://www.wikidata.org/wiki/Q28683368"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57cff8",
+      "name": "Chinreisha",
+      "slug": "chinreisha",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "Shinto shrine in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shinto shrine"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q2963793",
+        "url": "https://www.wikidata.org/wiki/Q2963793"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d02e",
+      "name": "Ishikawa",
+      "slug": "ishikawa",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "restaurant in Shinjuku-ku, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q20982955",
+        "url": "https://www.wikidata.org/wiki/Q20982955"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57cff3",
+      "name": "JR East Shiki Theatre Haru",
+      "slug": "jr-east-shiki-theatre-haru",
+      "type": "experience",
+      "priority": 23,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11226256",
+        "url": "https://www.wikidata.org/wiki/Q11226256"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d028",
+      "name": "Jurakudai",
+      "slug": "jurakudai",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q17214920",
+        "url": "https://www.wikidata.org/wiki/Q17214920"
+      }
+    },
+    {
+      "id": "69b469385c052622bb57cfed",
+      "name": "Nogata Water Tower",
+      "slug": "nogata-water-tower",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10856147",
+        "url": "https://www.wikidata.org/wiki/Q10856147"
+      }
+    },
+    {
+      "id": "699a31cd7824af058955448c",
+      "name": "Safety Promotion Center",
+      "slug": "safety-promotion-center-2",
+      "type": "place",
+      "priority": 23,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": null
+    },
+    {
+      "id": "699a31cd7824af0589554485",
+      "name": "Safety Promotion Center",
+      "slug": "safety-promotion-center",
+      "type": "place",
+      "priority": 23,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q3891462",
+        "url": "https://www.wikidata.org/wiki/Q3891462"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d015",
+      "name": "Shiba-shinmei Shopping Street",
+      "slug": "shiba-shinmei-shopping-street",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "shopping street in Sibadaimon, Minato",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description shopping street"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q97311599",
+        "url": "https://www.wikidata.org/wiki/Q97311599"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d009",
+      "name": "Statue of Umashimadenomikoto",
+      "slug": "statue-of-umashimadenomikoto",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "statue in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword statue"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q76864537",
+        "url": "https://www.wikidata.org/wiki/Q76864537"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d021",
+      "name": "Tofuya Ukai",
+      "slug": "tofuya-ukai",
+      "type": "experience",
+      "priority": 23,
+      "categories": [],
+      "description": "restaurant in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q129820690",
+        "url": "https://www.wikidata.org/wiki/Q129820690"
+      }
+    },
+    {
+      "id": "699a31ce7824af0589554492",
+      "name": "Yazawa River",
+      "slug": "yazawa-river",
+      "type": "place",
+      "priority": 23,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10844785",
+        "url": "https://www.wikidata.org/wiki/Q10844785"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d074",
+      "name": "Hantei",
+      "slug": "hantei",
+      "type": "experience",
+      "priority": 22,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q22120060",
+        "url": "https://www.wikidata.org/wiki/Q22120060"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d05a",
+      "name": "Mediage",
+      "slug": "mediage",
+      "type": "experience",
+      "priority": 22,
+      "categories": [
+        "Shopping Mall"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping mall"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11240255",
+        "url": "https://www.wikidata.org/wiki/Q11240255"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d067",
+      "name": "Nagasaka Sarashina Nunoya Tahee",
+      "slug": "nagasaka-sarashina-nunoya-tahee",
+      "type": "experience",
+      "priority": 22,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q24865700",
+        "url": "https://www.wikidata.org/wiki/Q24865700"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d060",
+      "name": "Namiki Yabusoba",
+      "slug": "namiki-yabusoba",
+      "type": "experience",
+      "priority": 22,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q22019694",
+        "url": "https://www.wikidata.org/wiki/Q22019694"
+      }
+    },
+    {
+      "id": "699a31ce7824af058955456f",
+      "name": "Shinagawa Aquarium",
+      "slug": "shinagawa-aquarium",
+      "type": "place",
+      "priority": 22,
+      "categories": [
+        "Aquarium"
+      ],
+      "description": "aquarium in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category aquarium"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11254393",
+        "url": "https://www.wikidata.org/wiki/Q11254393"
+      }
+    },
+    {
+      "id": "699a31ce7824af058955457c",
+      "name": "Tachiai River",
+      "slug": "tachiai-river",
+      "type": "place",
+      "priority": 22,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11597757",
+        "url": "https://www.wikidata.org/wiki/Q11597757"
+      }
+    },
+    {
+      "id": "69b469395c052622bb57d054",
+      "name": "Yukimura",
+      "slug": "yukimura",
+      "type": "experience",
+      "priority": 22,
+      "categories": [],
+      "description": "restaurant in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q20983166",
+        "url": "https://www.wikidata.org/wiki/Q20983166"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d09e",
+      "name": "Haneda Airport Garden",
+      "slug": "haneda-airport-garden",
+      "type": "experience",
+      "priority": 21,
+      "categories": [],
+      "description": "A shopping mall in Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q85883236",
+        "url": "https://www.wikidata.org/wiki/Q85883236"
+      }
+    },
+    {
+      "id": "699a31cf7824af0589554606",
+      "name": "Jōnanjima Seaside Park",
+      "slug": "jonanjima-seaside-park",
+      "type": "place",
+      "priority": 21,
+      "categories": [
+        "Park"
+      ],
+      "description": "park in Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11426038",
+        "url": "https://www.wikidata.org/wiki/Q11426038"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d084",
+      "name": "Kamenokoyama Kofun",
+      "slug": "kamenokoyama-kofun",
+      "type": "experience",
+      "priority": 21,
+      "categories": [],
+      "description": "burial mound in Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description burial mound"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11371013",
+        "url": "https://www.wikidata.org/wiki/Q11371013"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d098",
+      "name": "Noge Ōtsuka Kofun",
+      "slug": "noge-otsuka-kofun",
+      "type": "experience",
+      "priority": 21,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword kofun"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11645747",
+        "url": "https://www.wikidata.org/wiki/Q11645747"
+      }
+    },
+    {
+      "id": "699a31d07824af0589554647",
+      "name": "Ebitori River",
+      "slug": "ebitori-river",
+      "type": "place",
+      "priority": 20,
+      "categories": [
+        "River"
+      ],
+      "description": "river in Japan",
+      "keep": false,
+      "reasons": [
+        "reject: river not curated as tourist attraction"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11559135",
+        "url": "https://www.wikidata.org/wiki/Q11559135"
+      }
+    },
+    {
+      "id": "699a31d07824af0589554641",
+      "name": "Tamagawadai Park",
+      "slug": "tamagawadai-park",
+      "type": "place",
+      "priority": 20,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11430740",
+        "url": "https://www.wikidata.org/wiki/Q11430740"
+      }
+    },
+    {
+      "id": "699a31d07824af0589554666",
+      "name": "Ōmori Furusato-no-Hamabe Park",
+      "slug": "omori-furusato-no-hamabe-park",
+      "type": "place",
+      "priority": 20,
+      "categories": [
+        "Architectural Structure"
+      ],
+      "description": "town located in Ōta-ku, Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword park"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11436301",
+        "url": "https://www.wikidata.org/wiki/Q11436301"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0da",
+      "name": "Ginza Kojyu",
+      "slug": "ginza-kojyu",
+      "type": "experience",
+      "priority": 19,
+      "categories": [],
+      "description": "building in Ginza, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q20982990",
+        "url": "https://www.wikidata.org/wiki/Q20982990"
+      }
+    },
+    {
+      "id": "699a31d17824af058955472a",
+      "name": "Hyōgo Island Park",
+      "slug": "hyogo-island-park",
+      "type": "place",
+      "priority": 19,
+      "categories": [],
+      "description": "park in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11392844",
+        "url": "https://www.wikidata.org/wiki/Q11392844"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0e4",
+      "name": "Seizan Gallery",
+      "slug": "seizan-gallery",
+      "type": "experience",
+      "priority": 19,
+      "categories": [
+        "Art Gallery"
+      ],
+      "description": "museum in Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category art gallery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q21653349",
+        "url": "https://www.wikidata.org/wiki/Q21653349"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0df",
+      "name": "Theatre Creation",
+      "slug": "theatre-creation",
+      "type": "experience",
+      "priority": 19,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11306880",
+        "url": "https://www.wikidata.org/wiki/Q11306880"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0be",
+      "name": "ル テアトル銀座 by PARCO",
+      "slug": "ル-テアトル銀座-by-parco",
+      "type": "experience",
+      "priority": 19,
+      "categories": [
+        "Theater"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category theater"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11348834",
+        "url": "https://www.wikidata.org/wiki/Q11348834"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0cf",
+      "name": "大手町温泉",
+      "slug": "大手町温泉",
+      "type": "experience",
+      "priority": 19,
+      "categories": [],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism keyword 温泉"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q117321820",
+        "url": "https://www.wikidata.org/wiki/Q117321820"
+      }
+    },
+    {
+      "id": "69b4693b5c052622bb57d0fa",
+      "name": "Creation Gallery G8",
+      "slug": "creation-gallery-g8",
+      "type": "experience",
+      "priority": 18,
+      "categories": [
+        "Art Gallery"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category art gallery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q97342063",
+        "url": "https://www.wikidata.org/wiki/Q97342063"
+      }
+    },
+    {
+      "id": "699a31d17824af058955481b",
+      "name": "Gas-bashi",
+      "slug": "gas-bashi",
+      "type": "place",
+      "priority": 18,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: minor bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11295969",
+        "url": "https://www.wikidata.org/wiki/Q11295969"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0f0",
+      "name": "Ginza Graphic Gallery",
+      "slug": "ginza-graphic-gallery",
+      "type": "experience",
+      "priority": 18,
+      "categories": [
+        "Art Gallery"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category art gallery"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q97214385",
+        "url": "https://www.wikidata.org/wiki/Q97214385"
+      }
+    },
+    {
+      "id": "69b4693b5c052622bb57d0ff",
+      "name": "Hashizen",
+      "slug": "hashizen",
+      "type": "experience",
+      "priority": 18,
+      "categories": [
+        "Restaurant"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant category"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q30930388",
+        "url": "https://www.wikidata.org/wiki/Q30930388"
+      }
+    },
+    {
+      "id": "699a31d17824af05895547ed",
+      "name": "Himonya Park",
+      "slug": "himonya-park",
+      "type": "place",
+      "priority": 18,
+      "categories": [],
+      "description": "Park in eastern Tokyo",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11587731",
+        "url": "https://www.wikidata.org/wiki/Q11587731"
+      }
+    },
+    {
+      "id": "69b4693b5c052622bb57d11a",
+      "name": "Q134132422",
+      "slug": "q134132422",
+      "type": "experience",
+      "priority": 18,
+      "categories": [
+        "Sculpture"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: placeholder or empty name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q134132422",
+        "url": "https://www.wikidata.org/wiki/Q134132422"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0f5",
+      "name": "Sushi Yoshitake",
+      "slug": "sushi-yoshitake",
+      "type": "experience",
+      "priority": 18,
+      "categories": [],
+      "description": "restaurant in Ginza, Tokyo, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q20983131",
+        "url": "https://www.wikidata.org/wiki/Q20983131"
+      }
+    },
+    {
+      "id": "699a31d17824af0589554808",
+      "name": "Tamagawa Bridge",
+      "slug": "tamagawa-bridge",
+      "type": "place",
+      "priority": 18,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "bridge of National Route 1 and cables",
+      "keep": false,
+      "reasons": [
+        "reject: minor bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11430743",
+        "url": "https://www.wikidata.org/wiki/Q11430743"
+      }
+    },
+    {
+      "id": "69b4693a5c052622bb57d0ea",
+      "name": "Toyoshimaen Niwa no Yu",
+      "slug": "toyoshimaen-niwa-no-yu",
+      "type": "experience",
+      "priority": 18,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q10860833",
+        "url": "https://www.wikidata.org/wiki/Q10860833"
+      }
+    },
+    {
+      "id": "699a31d27824af05895548e4",
+      "name": "Daishi Bridge",
+      "slug": "daishi-bridge",
+      "type": "place",
+      "priority": 17,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "bridge over the Tama River, between Ota-ku, Tokyo and Kawasaki City, Kanagawa Prefecture, Japan",
+      "keep": false,
+      "reasons": [
+        "reject: minor bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11435239",
+        "url": "https://www.wikidata.org/wiki/Q11435239"
+      }
+    },
+    {
+      "id": "69b4693b5c052622bb57d130",
+      "name": "釜めし春",
+      "slug": "釜めし春",
+      "type": "experience",
+      "priority": 17,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: restaurant/infrastructure description"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q130616828",
+        "url": "https://www.wikidata.org/wiki/Q130616828"
+      }
+    },
+    {
+      "id": "699a31d37824af058955498f",
+      "name": "Heiwajima Park",
+      "slug": "heiwajima-park",
+      "type": "place",
+      "priority": 16,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: not clearly tourism-related"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11482236",
+        "url": "https://www.wikidata.org/wiki/Q11482236"
+      }
+    },
+    {
+      "id": "699a31d37824af05895549fc",
+      "name": "Medical Plant Garden of Hoshi University",
+      "slug": "medical-plant-garden-of-hoshi-university",
+      "type": "place",
+      "priority": 15,
+      "categories": [],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q5926916",
+        "url": "https://www.wikidata.org/wiki/Q5926916"
+      }
+    },
+    {
+      "id": "699a31d37824af05895549ea",
+      "name": "Oi Central Seaside Park Ball Field No. 2",
+      "slug": "oi-central-seaside-park-ball-field-no-2",
+      "type": "place",
+      "priority": 15,
+      "categories": [
+        "Stadium"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: non-tourism infrastructure/name"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11432123",
+        "url": "https://www.wikidata.org/wiki/Q11432123"
+      }
+    },
+    {
+      "id": "699a31d37824af05895549da",
+      "name": "Shinagawa Kumin Park",
+      "slug": "shinagawa-kumin-park",
+      "type": "place",
+      "priority": 15,
+      "categories": [],
+      "description": "park in Shinagawa, Tokyo, Japan",
+      "keep": true,
+      "reasons": [
+        "keep: tourism description park in "
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11254389",
+        "url": "https://www.wikidata.org/wiki/Q11254389"
+      }
+    },
+    {
+      "id": "699a31d47824af0589554be2",
+      "name": "六郷川橋梁 (東海道本線)",
+      "slug": "六郷川橋梁-東海道本線",
+      "type": "place",
+      "priority": 13,
+      "categories": [
+        "Bridge"
+      ],
+      "description": "",
+      "keep": false,
+      "reasons": [
+        "reject: minor bridge"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11392583",
+        "url": "https://www.wikidata.org/wiki/Q11392583"
+      }
+    },
+    {
+      "id": "699a31d57824af0589554c46",
+      "name": "日の出銀座商店街",
+      "slug": "日の出銀座商店街",
+      "type": "place",
+      "priority": 12,
+      "categories": [
+        "shopping street"
+      ],
+      "description": "",
+      "keep": true,
+      "reasons": [
+        "keep: tourism category shopping street"
+      ],
+      "externalRef": {
+        "provider": "wikidata",
+        "id": "Q11504656",
+        "url": "https://www.wikidata.org/wiki/Q11504656"
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@ const adminZonesController = require('../controllers/admin-zones.controller');
 const adminActivitySyncController = require('../controllers/admin-activity-sync.controller');
 const adminZoneSyncController = require('../controllers/admin-zone-sync.controller');
 const adminCompliancePacksController = require('../controllers/admin-compliance-packs.controller');
+const onboardingTrackingController = require('../controllers/onboarding-tracking.controller');
 
 const router = Router();
 
@@ -17,6 +18,7 @@ router.get('/analytics/funnel', adminAnalyticsController.funnel);
 router.get('/analytics/revenue', adminAnalyticsController.revenueInsights);
 router.get('/analytics/screens', adminAnalyticsController.screenDropoff);
 router.get('/analytics/users', adminAnalyticsController.usersInsights);
+router.get('/analytics/onboarding-funnel', onboardingTrackingController.getAdminFunnel);
 
 router.get('/taxonomy/zone-types', adminTaxonomyController.list);
 router.get('/taxonomy/zone-types/:qid', adminTaxonomyController.getByQid);

@@ -251,6 +251,7 @@ exports.createZone = async (req, res) => {
       timeZone,
       geo,
       active,
+      audited,
       priority,
       discoverPreviewSearched
     } = req.body;
@@ -308,6 +309,7 @@ exports.createZone = async (req, res) => {
       timeZone: timeZone ? String(timeZone).trim() : null,
       geo: normalizeGeo(geo),
       active: typeof active === "boolean" ? active : true,
+      audited: typeof audited === "boolean" ? audited : false,
       priority: Number.isFinite(Number(priority)) ? Number(priority) : 100,
       discoverPreviewSearched: typeof discoverPreviewSearched === "boolean" ? discoverPreviewSearched : false
     };
@@ -448,6 +450,7 @@ exports.updateZone = async (req, res) => {
       timeZone,
       geo,
       active,
+      audited,
       priority,
       discoverPreviewSearched
     } = req.body;
@@ -475,6 +478,7 @@ exports.updateZone = async (req, res) => {
     if (cover !== undefined) payload.cover = cover ? String(cover).trim() : null;
     if (timeZone !== undefined) payload.timeZone = timeZone ? String(timeZone).trim() : null;
     if (active !== undefined) payload.active = !!active;
+    if (audited !== undefined) payload.audited = !!audited;
     if (priority !== undefined) payload.priority = Number.isFinite(Number(priority)) ? Number(priority) : 100;
     if (discoverPreviewSearched !== undefined) payload.discoverPreviewSearched = !!discoverPreviewSearched;
     if (level !== undefined) payload.level = parseNumberOrNull(level);

@@ -1,5 +1,6 @@
 const googlePlacesService = require('../services/google-places.service');
 const Zone = require('../models/Zone');
+const Activity = require('../models/Activity');
 const {
   findTaxonomyByQid,
   resolveZoneDisplayTypeLabel
@@ -1196,6 +1197,7 @@ exports.suggest = async (req, res, next) => {
 
     const limit = Math.min(parseInt(req.query.limit, 10) || 8, 20);
     const includeExternal = req.query.includeExternal === 'true';
+    const applyDestinationRelevanceFilter = req.query.destinationRelevantOnly === 'true';
     const wikidataContextMax = Math.min(Number(req.query.wikidataContextMax) || 3, 5);
 
     // 1) Siempre buscamos primero en BD
@@ -1220,9 +1222,54 @@ exports.suggest = async (req, res, next) => {
       .collation({ locale: 'en', strength: 1 })
       .lean();
 
+    let filteredZoneDocs = zoneDocs;
+    let activityCountByZoneId = new Map();
+
+    if (applyDestinationRelevanceFilter && zoneDocs.length) {
+      const zoneObjectIds = zoneDocs
+        .map((z) => z?._id)
+        .filter(Boolean);
+
+      if (zoneObjectIds.length) {
+        const counts = await Activity.aggregate([
+          {
+            $match: {
+              active: true,
+              'location.zonePathIds': { $in: zoneObjectIds },
+            },
+          },
+          { $unwind: '$location.zonePathIds' },
+          {
+            $match: {
+              'location.zonePathIds': { $in: zoneObjectIds },
+            },
+          },
+          {
+            $group: {
+              _id: '$location.zonePathIds',
+              total: { $sum: 1 },
+            },
+          },
+        ]);
+
+        activityCountByZoneId = new Map(
+          (Array.isArray(counts) ? counts : []).map((row) => [
+            String(row?._id || ''),
+            Number(row?.total || 0),
+          ])
+        );
+      }
+
+      filteredZoneDocs = zoneDocs.filter((z) => {
+        const hasDiscoverFlag = !!z?.discoverPreviewSearched;
+        const count = Number(activityCountByZoneId.get(String(z?._id || '')) || 0);
+        return hasDiscoverFlag || count > 20;
+      });
+    }
+
     const ancestryIds = Array.from(
       new Set(
-        zoneDocs
+        filteredZoneDocs
           .flatMap((z) => (Array.isArray(z?.ancestry) ? z.ancestry : []))
           .map((id) => String(id))
       )
@@ -1262,13 +1309,13 @@ exports.suggest = async (req, res, next) => {
     };
 
     const dbExternalIds = new Set(
-      zoneDocs
+      filteredZoneDocs
         .map((doc) => doc?.externalId)
         .filter(Boolean)
         .map((id) => String(id))
     );
 
-    const dbSuggestions = zoneDocs.map((z) => {
+    const dbSuggestions = filteredZoneDocs.map((z) => {
       const canonicalType = String(getCanonicalType(z) || 'zone').toLowerCase();
       const type = canonicalType;
       const chain = buildAdminChain(z);
@@ -1284,6 +1331,12 @@ exports.suggest = async (req, res, next) => {
         type,
         canonicalType,
         _id: z._id,
+        geo: z?.geo && Array.isArray(z?.geo?.coordinates)
+          ? {
+              type: 'Point',
+              coordinates: [Number(z.geo.coordinates[0]), Number(z.geo.coordinates[1])]
+            }
+          : undefined,
         externalId: z.externalId || undefined,
         source: 'db',
         region,
@@ -1451,24 +1504,34 @@ exports.resolve = async (req, res, next) => {
     // 5) Construimos el objeto Location que el front espera
     let locationId = null;
     let label = null;
+    let selectedDoc = null;
 
     if (finalType === 'city' && cityDoc) {
       locationId = cityDoc._id;
       label = cityDoc.name;
+      selectedDoc = cityDoc;
     } else if (finalType === 'region' && regionDoc) {
       locationId = regionDoc._id;
       label = regionDoc.name;
+      selectedDoc = regionDoc;
     } else {
       // Fallback a country
       locationId = countryDoc._id;
       label = countryDoc.name;
       finalType = 'country';
+      selectedDoc = countryDoc;
     }
 
     const location = {
       _id: locationId,
       type: finalType,
       label,
+      geo: selectedDoc?.geo && Array.isArray(selectedDoc?.geo?.coordinates)
+        ? {
+            type: 'Point',
+            coordinates: [Number(selectedDoc.geo.coordinates[0]), Number(selectedDoc.geo.coordinates[1])]
+          }
+        : undefined,
       // Enviamos los objetos completos de región y país para que el front tenga contexto
       region: regionDoc,
       country: countryDoc,
