@@ -3171,6 +3171,7 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'beef',
   'best',
   'bio',
+  'bite',
   'bread',
   'cafe',
   'cafes',
@@ -3180,10 +3181,12 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'dessert',
   'dining',
   'experience',
+  'fish',
   'food',
   'foodie',
   'foods',
   'full',
+  'guide',
   'hotel',
   'icecream',
   'japanese',
@@ -3199,9 +3202,12 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'ramen',
   'restaurant',
   'restaurants',
+  'spot',
+  'spots',
   'street',
   'sushi',
   'tea',
+  'tuna',
   'travel',
   'trip',
   'video',
@@ -3210,22 +3216,50 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
 ]);
 
 const SOCIAL_IMPORT_LOCATION_TERMS = new Set([
+  'aoyama',
+  'asakusa',
+  'chuo',
+  'gifu',
+  'ginza',
+  'ikebukuro',
   'japan',
   'japon',
+  'kamakura',
+  'sangenjaya',
+  'shibuya',
+  'tarui',
+  'tsukiji',
   'tokio',
   'tokyo',
+  '三軒茶屋',
+  '垂井',
+  '岐阜',
+  '東京',
+  '池袋',
+  '浅草',
+  '渋谷',
+  '築地',
+  '銀座',
+  '鎌倉',
+  '青山',
 ]);
 
 const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
-  mention_profile: 0.28,
-  business_profile: 0.28,
-  list_item: 0.24,
-  recommendation: 0.22,
-  mention: 0.2,
-  handle: 0.2,
-  account: 0.2,
-  profile: 0.18,
-  hashtag: 0.16,
+  list_item: 0.36,
+  recommendation: 0.34,
+  explicit_name: 0.33,
+  video_ocr: 0.31,
+  visible_text: 0.31,
+  ocr: 0.31,
+  audio_transcript: 0.3,
+  transcript: 0.3,
+  mention_profile: 0.25,
+  business_profile: 0.25,
+  mention: 0.18,
+  handle: 0.18,
+  account: 0.16,
+  profile: 0.14,
+  hashtag: 0.13,
   place: 0.14,
   pin: 0.14,
   caption: 0.09,
@@ -3238,6 +3272,7 @@ const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
 };
 
 const SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES = new Set([
+  'explicit_name',
   'list_item',
   'recommendation',
 ]);
@@ -3830,12 +3865,18 @@ function isExplicitSocialImportListSource(source = '') {
   return SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES.has(String(source || '').trim().toLowerCase());
 }
 
+function isHighPrioritySocialImportMediaSource(source = '') {
+  return ['audio_transcript', 'ocr', 'transcript', 'video_ocr', 'visible_text']
+    .includes(String(source || '').trim().toLowerCase());
+}
+
 function shouldResolveSocialImportLabel(item = {}, labels = []) {
   const hasExplicitList = Array.isArray(labels) && labels.some((entry) => (
     isExplicitSocialImportListSource(entry?.source)
   ));
   if (!hasExplicitList) return true;
-  return isExplicitSocialImportListSource(item?.source);
+  return isExplicitSocialImportListSource(item?.source) ||
+    isHighPrioritySocialImportMediaSource(item?.source);
 }
 
 function prioritizeSocialImportLabels(labels = []) {
@@ -3871,6 +3912,9 @@ function buildSocialImportGoogleSearchQuery(label = '', item = {}, locationConte
 }
 
 function expandCompactSocialImportSearchLabel(label = '') {
+  const raw = String(label || '').trim();
+  if (/[^\x00-\x7F]/.test(raw)) return raw;
+
   const normalized = normalizeComparableText(label);
   if (!normalized || normalized.includes(' ')) return normalized;
 
@@ -4057,6 +4101,40 @@ function selectBestSocialImportPreviewResults(rows = [], options = {}) {
     .slice(0, maxResults);
 }
 
+function socialImportNameTokenOverlapScore(left = '', right = '') {
+  const leftTokens = new Set(getSpecificSocialImportTokens(left));
+  const rightTokens = getSpecificSocialImportTokens(right);
+  if (!leftTokens.size || !rightTokens.length) return 0;
+
+  const hits = rightTokens.filter((token) => leftTokens.has(token)).length;
+  return hits / Math.max(1, Math.min(leftTokens.size, rightTokens.length));
+}
+
+function hasMeaningfulSocialImportNameMatch(candidateName = '', targetNames = []) {
+  const candidate = normalizeComparableText(candidateName);
+  if (!candidate) return false;
+
+  for (const rawTarget of Array.isArray(targetNames) ? targetNames : [targetNames]) {
+    const target = normalizeComparableText(rawTarget);
+    if (!target) continue;
+
+    if (candidate === target) return true;
+    if (
+      candidate.length >= 4 &&
+      target.length >= 4 &&
+      (candidate.includes(target) || target.includes(candidate))
+    ) {
+      return true;
+    }
+
+    if (socialImportNameTokenOverlapScore(candidate, target) >= 0.5) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function findExistingActivityForGoogleCache(googleCache = {}, label = '', location = null) {
   const candidates = [];
   const geo = googleCache?.geo;
@@ -4106,9 +4184,33 @@ async function findExistingActivityForGoogleCache(googleCache = {}, label = '', 
   });
 
   const target = label || googleCache?.name || '';
+  const googlePlaceId = String(googleCache?.placeId || '').trim();
+  const targetNames = Array.from(new Set([
+    target,
+    googleCache?.name,
+  ].map((value) => String(value || '').trim()).filter(Boolean)));
+  const googleNameSlug = slugify(googleCache?.name || '');
   let best = null;
   let bestScore = 0;
   for (const candidate of uniqueCandidates) {
+    const candidatePlaceId = String(candidate?.googleCache?.placeId || '').trim();
+    if (googlePlaceId && candidatePlaceId && candidatePlaceId === googlePlaceId) {
+      return candidate;
+    }
+
+    const slugMatches = !!candidate?.slug && (
+      candidate.slug === labelSlug ||
+      (googleNameSlug && candidate.slug === googleNameSlug)
+    );
+    const nameMatches = [
+      candidate?.name,
+      candidate?.googleCache?.name,
+    ].some((candidateName) => hasMeaningfulSocialImportNameMatch(candidateName, targetNames));
+
+    // Nearby coordinates alone are not enough. Dense buildings can contain many
+    // activities, so the name or Google place id must also line up.
+    if (!slugMatches && !nameMatches) continue;
+
     const score = scoreGoogleCachePlaceMatch(
       {
         name: candidate?.name,
@@ -4124,7 +4226,7 @@ async function findExistingActivityForGoogleCache(googleCache = {}, label = '', 
     }
   }
 
-  return bestScore >= 0.55 ? best : null;
+  return bestScore >= 0.62 ? best : null;
 }
 
 function inferActivityTypeFromGoogleTypes(types = []) {
@@ -4249,6 +4351,19 @@ function normalizeSocialImportLabel(value = '') {
   return label;
 }
 
+function normalizeSocialImportContext(value = '') {
+  return String(value || '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/[@#]/g, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/[\\/]+/g, ' ')
+    .replace(/[|•·]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[,.:;\-\s]+|[,.:;\-\s]+$/g, '')
+    .slice(0, 240);
+}
+
 function stripSocialMetadataPrefix(line = '') {
   const raw = String(line || '').trim();
   if (!raw) return '';
@@ -4268,12 +4383,47 @@ function stripSocialMetadataPrefix(line = '') {
   return raw.replace(/^(?:keywords)\s*:/i, 'keywords:').trim();
 }
 
-function extractSocialImportListItem(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const match = raw.match(/^\s*(?:\d{1,2}[.)]|[•*-])\s+(.+)$/u);
-  if (!match?.[1]) return null;
+function isSocialImportInstructionLine(value = '') {
+  const normalized = normalizeComparableText(value);
+  if (!normalized) return true;
+  return /^(?:save|follow|like|comment|share|subscribe|watch|full trip|link in bio|dm|tag)\b/i.test(normalized) ||
+    normalized.includes(' follow for ') ||
+    normalized.includes(' link in bio') ||
+    normalized.includes(' next trip');
+}
 
-  let body = match[1].trim();
+function stripLeadingSocialImportMarker(value = '') {
+  return String(value || '')
+    .replace(/^\s*(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)+\s*/u, '')
+    .trim();
+}
+
+function extractSocialImportKeyValuePlace(value = '') {
+  const raw = stripLeadingSocialImportMarker(value);
+  const match = raw.match(/^(?:store\s+name|shop\s+name|restaurant\s+name|place\s+name|business\s+name|name|店名|店舗名)\s*[:：]\s*(.+)$/iu);
+  if (!match?.[1]) return null;
+  const label = normalizeSocialImportLabel(match[1]);
+  return label ? { label, context: '' } : null;
+}
+
+function stripSocialImportProductDescriptor(value = '') {
+  return String(value || '')
+    .replace(/\s*(?:「[^」]+」|『[^』]+』|"[^"]+"|'[^']+'|“[^”]+”)\s*$/u, '')
+    .trim();
+}
+
+function isLikelySocialImportAreaPrefix(value = '') {
+  const normalized = normalizeComparableText(value);
+  return !!normalized && SOCIAL_IMPORT_LOCATION_TERMS.has(normalized);
+}
+
+function normalizeExplicitSocialImportPlaceBody(value = '') {
+  let body = stripSocialImportProductDescriptor(stripLeadingSocialImportMarker(value));
+  if (!body || isSocialImportInstructionLine(body)) return null;
+
+  const keyValue = extractSocialImportKeyValuePlace(body);
+  if (keyValue?.label) return keyValue;
+
   let inlineContext = '';
   const inlineParts = body.split(/\s+(?:-|–|—|@|📍)\s*/u).map((part) => part.trim()).filter(Boolean);
   if (inlineParts.length > 1) {
@@ -4281,19 +4431,116 @@ function extractSocialImportListItem(line = '') {
     inlineContext = inlineParts.slice(1).join(' ');
   }
 
-  const label = normalizeSocialImportLabel(body.replace(/^["']+|["']+$/g, ''));
-  if (!label) return null;
+  const tokens = body.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2 && isLikelySocialImportAreaPrefix(tokens[0])) {
+    return {
+      label: normalizeSocialImportLabel(tokens.slice(1).join(' ')),
+      context: normalizeSocialImportContext([tokens[0], inlineContext].filter(Boolean).join(' ')),
+    };
+  }
+
   return {
-    label,
-    context: normalizeSocialImportLabel(inlineContext),
+    label: normalizeSocialImportLabel(body.replace(/^["']+|["']+$/g, '')),
+    context: normalizeSocialImportContext(inlineContext),
   };
+}
+
+function extractSocialImportListItem(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const match = raw.match(
+    /^\s*(?:(?:\d{1,2}[.)]|[０-９]{1,2}[.)．、]|[①-⑳]|[➀-➉]|[•*-])\s*|(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s+)(.+)$/u
+  );
+  if (!match?.[1]) return null;
+
+  const parsed = normalizeExplicitSocialImportPlaceBody(match[1]);
+  return parsed?.label ? parsed : null;
+}
+
+function extractSocialImportNamedPlaceLine(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const parsed = extractSocialImportKeyValuePlace(raw);
+  return parsed?.label ? parsed : null;
 }
 
 function extractSocialImportPinContext(line = '') {
   const raw = stripSocialMetadataPrefix(line);
-  const match = raw.match(/(?:📍|location\s*:|place\s*:|at\s+)(.+)$/i);
+  const match = raw.match(/(?:📍|location\s*:|place\s*:|\bat\s+)(.+)$/i);
   if (!match?.[1]) return '';
-  return normalizeSocialImportLabel(match[1]);
+  return normalizeSocialImportContext(match[1]);
+}
+
+function extractSocialImportAddressContext(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const match = raw.match(/^(?:address|住所|所在地)\s*[:：]\s*(.+)$/iu);
+  if (!match?.[1]) return '';
+  return normalizeSocialImportContext(match[1]);
+}
+
+function isSocialImportAddressLikeLine(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const normalized = normalizeComparableText(raw);
+  if (!normalized) return false;
+  return /〒|\b\d{1,5}(?:[-\s]\d{1,5})?\b/.test(raw) &&
+    /\b(?:japan|tokyo|gifu|city|cho|gun|prefecture|chome)\b|東京|岐阜|住所|〒/iu.test(raw);
+}
+
+function nextSocialImportAddressContext(lines = [], startIndex = 0) {
+  for (let i = startIndex + 1; i < Math.min(lines.length, startIndex + 3); i += 1) {
+    const line = stripSocialMetadataPrefix(lines[i] || '');
+    const addressContext = extractSocialImportAddressContext(line);
+    if (addressContext) return addressContext;
+    if (isSocialImportAddressLikeLine(line)) return normalizeSocialImportContext(line);
+  }
+  return '';
+}
+
+function isStandaloneSocialImportNameLine(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const label = normalizeSocialImportLabel(raw);
+  if (!label || isSocialImportInstructionLine(label) || isSocialImportAddressLikeLine(label)) return false;
+  if (label.length > 40 || /[。！？!?]/u.test(raw)) return false;
+  if (/[:：#@]/u.test(raw)) return false;
+  const comparable = normalizeComparableText(label);
+  const tokens = comparable.split(' ').filter(Boolean);
+  if (!tokens.length || tokens.length > 5) return false;
+  if (tokens.every((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token) || SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return false;
+  return /^[A-ZÁÉÍÓÚÑ0-9][\p{L}\p{N}'’.\-\s]+$/u.test(label) || /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(label);
+}
+
+function extractSocialImportGlobalContext(lines = []) {
+  const text = String((Array.isArray(lines) ? lines : []).join('\n') || '');
+  const contexts = [];
+  const add = (value) => {
+    const cleaned = normalizeSocialImportContext(value);
+    if (cleaned && !contexts.includes(cleaned)) contexts.push(cleaned);
+  };
+
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const address = extractSocialImportAddressContext(line);
+    if (address) add(address);
+  }
+
+  const hints = [
+    { pattern: /\bshibuya\b|渋谷/iu, label: 'Shibuya Tokyo' },
+    { pattern: /\btsukiji\b|築地/iu, label: 'Tsukiji Tokyo' },
+    { pattern: /\bsangenjaya\b|三軒茶屋/iu, label: 'Sangenjaya Tokyo' },
+    { pattern: /\basakusa\b|浅草/iu, label: 'Asakusa Tokyo' },
+    { pattern: /\baoyama\b|青山/iu, label: 'Aoyama Tokyo' },
+    { pattern: /\bikebukuro\b|池袋/iu, label: 'Ikebukuro Tokyo' },
+    { pattern: /\bginza\b|銀座/iu, label: 'Ginza Tokyo' },
+    { pattern: /\bkamakura\b|鎌倉/iu, label: 'Kamakura Japan' },
+    { pattern: /\bgifu\b|岐阜/iu, label: 'Gifu Japan' },
+    { pattern: /\btarui\b|垂井/iu, label: 'Tarui Gifu Japan' },
+    { pattern: /\btokyo\b|東京/iu, label: 'Tokyo Japan' },
+    { pattern: /\bjapan\b/iu, label: 'Japan' },
+  ];
+
+  for (const hint of hints) {
+    if (hint.pattern.test(text)) add(hint.label);
+    if (contexts.length >= 8) break;
+  }
+
+  return contexts.join(' ');
 }
 
 function nextSocialImportListContext(lines = [], startIndex = 0) {
@@ -4302,6 +4549,12 @@ function nextSocialImportListContext(lines = [], startIndex = 0) {
     const line = stripSocialMetadataPrefix(lines[i] || '');
     if (!line) continue;
     if (extractSocialImportListItem(line)) break;
+
+    const addressContext = extractSocialImportAddressContext(line);
+    if (addressContext) {
+      contexts.push(addressContext);
+      continue;
+    }
 
     const pinContext = extractSocialImportPinContext(line);
     if (pinContext) {
@@ -4334,7 +4587,7 @@ function extractSocialImportLabels(payload = {}) {
     const cleaned = normalizeSocialImportLabel(label);
     if (!cleaned) return;
     const key = cleaned.toLowerCase();
-    const context = normalizeSocialImportLabel(extra?.context || '');
+    const context = normalizeSocialImportContext(extra?.context || '');
     const sequence = Number(extra?.sequence);
     const profile = sanitizeSocialImportProfileForStorage(extra?.profile);
     const handle = normalizeSocialImportHandle(extra?.handle || '');
@@ -4376,15 +4629,36 @@ function extractSocialImportLabels(payload = {}) {
     }
   }
 
-  const text = String(payload?.text || '').trim();
-  if (text) {
+  const addLabelsFromTextBlock = (rawText = '', defaultSource = 'text') => {
+    const text = String(rawText || '').trim();
+    if (!text) return;
+
     const lines = text.split(/\r?\n/).map((entry) => stripSocialMetadataPrefix(entry)).filter(Boolean);
+    const globalContext = extractSocialImportGlobalContext(lines);
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
       const listItem = extractSocialImportListItem(line);
       if (listItem?.label) {
         add(listItem.label, 'list_item', {
-          context: [listItem.context, nextSocialImportListContext(lines, index)].filter(Boolean).join(' '),
+          context: [listItem.context, nextSocialImportListContext(lines, index), globalContext].filter(Boolean).join(' '),
+          sequence: index,
+        });
+        continue;
+      }
+
+      const namedPlace = extractSocialImportNamedPlaceLine(line);
+      if (namedPlace?.label) {
+        add(namedPlace.label, 'explicit_name', {
+          context: [namedPlace.context, nextSocialImportListContext(lines, index), globalContext].filter(Boolean).join(' '),
+          sequence: index,
+        });
+        continue;
+      }
+
+      const nearbyAddress = nextSocialImportAddressContext(lines, index);
+      if (nearbyAddress && isStandaloneSocialImportNameLine(line)) {
+        add(line, 'explicit_name', {
+          context: [nearbyAddress, globalContext].filter(Boolean).join(' '),
           sequence: index,
         });
         continue;
@@ -4405,7 +4679,7 @@ function extractSocialImportLabels(payload = {}) {
 
       for (const part of line.split(/[|,;]+/).map((entry) => entry.trim()).filter(Boolean)) {
         if (/^[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}$/u.test(part)) {
-          add(part, 'text');
+          add(part, defaultSource, { context: globalContext });
         }
       }
     }
@@ -4436,7 +4710,12 @@ function extractSocialImportLabels(payload = {}) {
 
     const captionMatches = candidateText.match(/\b[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}\b/gu) || [];
     for (const match of captionMatches) add(match, 'caption');
-  }
+  };
+
+  addLabelsFromTextBlock(payload?.text, 'text');
+  addLabelsFromTextBlock(payload?.visibleText || payload?.ocrText || payload?.imageText, 'visible_text');
+  addLabelsFromTextBlock(payload?.videoOcrText, 'video_ocr');
+  addLabelsFromTextBlock(payload?.audioTranscript || payload?.transcript, 'audio_transcript');
 
   return out.slice(0, 24);
 }
