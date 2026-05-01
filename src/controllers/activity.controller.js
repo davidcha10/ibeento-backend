@@ -1720,6 +1720,11 @@ exports.importSocialActivities = async (req, res) => {
       const query = String(item?.label || '').trim();
       if (!query) continue;
       try {
+        if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
+          unresolved.push({ label: query, reason: 'context_only' });
+          continue;
+        }
+
         const searchQuery = [
           query,
           locationContext?.name || '',
@@ -1728,16 +1733,17 @@ exports.importSocialActivities = async (req, res) => {
           textQuery: searchQuery,
           maxResultCount: 5,
         });
-        const selected = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text);
-        if (!selected) {
+        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
+        if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
         }
+        const selected = match.place;
         resolvedCandidates.push({
           label: query,
           source: item.source || 'candidate',
           googleCache: selected,
-          confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+          confidence: match.confidence,
           evidence: text,
           type: 'exact_place',
         });
@@ -1857,6 +1863,11 @@ exports.previewSocialActivities = async (req, res) => {
       const query = String(item?.label || '').trim();
       if (!query) continue;
       try {
+        if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
+          unresolved.push({ label: query, reason: 'context_only' });
+          continue;
+        }
+
         const searchQuery = [
           query,
           locationContext?.name || '',
@@ -1865,17 +1876,20 @@ exports.previewSocialActivities = async (req, res) => {
           textQuery: searchQuery,
           maxResultCount: 5,
         });
-        const selected = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text);
-        if (!selected) {
+        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
+        if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
         }
+        const selected = match.place;
+        const confidence = match.confidence;
         resolvedCandidates.push({
-          name: query,
-          nameSource: 'source_claim',
+          name: selected.name || query,
+          nameSource: 'google_cache',
           visibility: 'imported_private',
           type: inferActivityTypeFromGoogleTypes(selected.types),
           googleCache: buildGoogleCachePayload(selected),
+          media: buildSocialImportPreviewMedia(selected, req),
           ranking: {
             ratingAvg: 0,
             reviewsCount: 0,
@@ -1886,7 +1900,7 @@ exports.previewSocialActivities = async (req, res) => {
           sourceClaims: [buildGoogleCacheSocialSourceClaim({
             label: query,
             googleCache: selected,
-            confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+            confidence,
             evidence: text,
           }, {
             source,
@@ -1894,7 +1908,10 @@ exports.previewSocialActivities = async (req, res) => {
             text,
           })],
           _socialImport: {
-            confidence: scoreGoogleCachePlaceMatch(selected, query, locationContext?.name || text),
+            confidence,
+            resolveScore: match.resolveScore,
+            signalSource: item?.source || 'candidate',
+            signalQuality: match.signalQuality,
             originalLabel: query,
             previewOnly: true,
           },
@@ -1904,15 +1921,18 @@ exports.previewSocialActivities = async (req, res) => {
       }
     }
 
+    const previewResults = selectBestSocialImportPreviewResults(resolvedCandidates);
+
     return res.status(200).json({
       success: true,
-      data: resolvedCandidates,
+      data: previewResults,
       meta: {
         previewOnly: true,
         location,
         source,
         receivedCandidates: labels.length,
-        resolvedCount: resolvedCandidates.length,
+        resolvedCount: previewResults.length,
+        candidateMatchesCount: resolvedCandidates.length,
         unresolved,
       },
     });
@@ -3045,7 +3065,96 @@ function normalizeComparableText(value = '') {
     .trim();
 }
 
-function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '') {
+const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
+  'activity',
+  'bar',
+  'cafe',
+  'coffee',
+  'dessert',
+  'food',
+  'hotel',
+  'matcha',
+  'museum',
+  'park',
+  'place',
+  'ramen',
+  'restaurant',
+  'sushi',
+  'tea',
+]);
+
+const SOCIAL_IMPORT_LOCATION_TERMS = new Set([
+  'japan',
+  'japon',
+  'tokio',
+  'tokyo',
+]);
+
+const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
+  mention: 0.2,
+  handle: 0.2,
+  account: 0.2,
+  profile: 0.18,
+  hashtag: 0.16,
+  place: 0.14,
+  pin: 0.14,
+  caption: 0.09,
+  text: 0.08,
+  metadata: 0.03,
+  keyword: 0.03,
+  location: 0.02,
+  url: 0.02,
+  candidate: 0.08,
+};
+
+function expandedComparableTokens(value = '') {
+  const normalized = normalizeComparableText(value);
+  if (!normalized) return [];
+
+  const tokens = normalized.split(' ').filter((token) => token.length > 2);
+  const compact = normalized.replace(/\s+/g, '');
+
+  for (const generic of SOCIAL_IMPORT_GENERIC_TERMS) {
+    if (compact.length <= generic.length + 2) continue;
+    if (compact.endsWith(generic)) tokens.push(compact.slice(0, -generic.length));
+    if (compact.startsWith(generic)) tokens.push(compact.slice(generic.length));
+  }
+
+  return Array.from(new Set(tokens.filter((token) => token.length > 2)));
+}
+
+function getSocialImportSignalSourceWeight(source = '') {
+  const normalized = String(source || '').trim().toLowerCase();
+  return SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS[normalized] ?? 0.06;
+}
+
+function getSpecificSocialImportTokens(label = '') {
+  return expandedComparableTokens(label)
+    .filter((token) => (
+      !SOCIAL_IMPORT_GENERIC_TERMS.has(token) &&
+      !SOCIAL_IMPORT_LOCATION_TERMS.has(token)
+    ));
+}
+
+function scoreSocialImportSignalQuality(label = '', source = '') {
+  const normalized = normalizeComparableText(label);
+  if (!normalized) return 0;
+
+  const tokens = expandedComparableTokens(label);
+  const specificTokens = getSpecificSocialImportTokens(label);
+  const sourceWeight = getSocialImportSignalSourceWeight(source);
+
+  let score = 0.18 + sourceWeight;
+  if (specificTokens.length) score += Math.min(0.26, specificTokens.length * 0.13);
+  if (normalized.includes(' ')) score += 0.05;
+  if (!normalized.includes(' ') && normalized.length >= 8) score += 0.05;
+  if (tokens.length === 1 && SOCIAL_IMPORT_GENERIC_TERMS.has(tokens[0])) score -= 0.28;
+  if (tokens.length && tokens.every((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token) || SOCIAL_IMPORT_LOCATION_TERMS.has(token))) score -= 0.22;
+
+  return Math.max(0, Math.min(0.45, Number(score.toFixed(2))));
+}
+
+function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal = {}) {
   const placeName = normalizeComparableText(place?.name || '');
   const target = normalizeComparableText(label || '');
   const formattedAddress = normalizeComparableText(place?.formattedAddress || '');
@@ -3056,8 +3165,8 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '') {
   if (placeName === target) score += 0.5;
   else if (placeName.includes(target) || target.includes(placeName)) score += 0.35;
   else {
-    const targetTokens = new Set(target.split(' ').filter((t) => t.length > 2));
-    const nameTokens = new Set(placeName.split(' ').filter((t) => t.length > 2));
+    const targetTokens = new Set(expandedComparableTokens(target));
+    const nameTokens = new Set(expandedComparableTokens(placeName));
     const hits = Array.from(targetTokens).filter((token) => nameTokens.has(token)).length;
     if (targetTokens.size) score += Math.min(0.28, (hits / targetTokens.size) * 0.28);
   }
@@ -3069,26 +3178,46 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '') {
 
   if (validGeoPoint(place?.geo)) score += 0.08;
   if (place?.ratingAvg || place?.reviewsCount) score += 0.05;
+
+  const targetTokens = getSpecificSocialImportTokens(target);
+  const nameTokens = new Set(expandedComparableTokens(placeName));
+  const hasSpecificNameHit = targetTokens.some((token) => nameTokens.has(token));
+  if (!hasSpecificNameHit && targetTokens.length && !placeName.includes(target) && !target.includes(placeName)) {
+    score -= 0.12;
+  }
+
+  const signalQuality = scoreSocialImportSignalQuality(label, signal?.source);
+  score += signalQuality;
+
   return Math.max(0, Math.min(0.98, Number(score.toFixed(2))));
 }
 
-function pickBestGoogleCachePlace(places = [], label = '', context = '') {
+function pickBestGoogleCachePlace(places = [], label = '', context = '', signal = {}) {
   if (!Array.isArray(places) || !places.length) return null;
   const ranked = places
     .map((place) => ({
       place,
-      score: scoreGoogleCachePlaceMatch(place, label, context),
+      confidence: scoreGoogleCachePlaceMatch(place, label, context, signal),
+      signalQuality: scoreSocialImportSignalQuality(label, signal?.source),
     }))
     .filter((entry) => (
       entry?.place?.placeId &&
       validGeoPoint(entry.place.geo) &&
       isResolvableGoogleActivityPlace(entry.place)
     ))
-    .sort((a, b) => b.score - a.score);
+    .map((entry) => ({
+      ...entry,
+      resolveScore: Number((
+        entry.confidence +
+        getSocialImportSignalSourceWeight(signal?.source) +
+        (Number(entry.place?.reviewsCount || 0) > 0 ? 0.02 : 0)
+      ).toFixed(2)),
+    }))
+    .sort((a, b) => b.resolveScore - a.resolveScore);
 
   const best = ranked[0];
-  if (!best || best.score < 0.48) return null;
-  return best.place;
+  if (!best || best.confidence < 0.5 || best.resolveScore < 0.6) return null;
+  return best;
 }
 
 function isResolvableGoogleActivityPlace(place = {}) {
@@ -3128,6 +3257,95 @@ function isResolvableGoogleActivityPlace(place = {}) {
   const isArea = areaTypes.some((type) => types.has(type));
   const isConcrete = concreteTypes.some((type) => types.has(type));
   return !isArea || isConcrete;
+}
+
+function isGenericSocialImportLabel(label = '') {
+  const normalized = normalizeComparableText(label);
+  if (!normalized || normalized.includes(' ')) return false;
+  return SOCIAL_IMPORT_GENERIC_TERMS.has(normalized);
+}
+
+function isGenericLocationCompoundSocialImportLabel(label = '', location = null) {
+  const normalized = normalizeComparableText(label);
+  if (!normalized || !normalized.includes(' ')) return false;
+
+  const locationTokens = new Set(
+    normalizeComparableText(location?.label || location?.name || '')
+      .split(' ')
+      .filter(Boolean)
+  );
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length < 2) return false;
+
+  return tokens.every((token) => (
+    SOCIAL_IMPORT_GENERIC_TERMS.has(token) ||
+    SOCIAL_IMPORT_LOCATION_TERMS.has(token) ||
+    locationTokens.has(token)
+  ));
+}
+
+async function isSocialImportContextOnlyLabel(label = '', location = null, labelsCount = 0) {
+  const normalized = normalizeComparableText(label);
+  if (!normalized) return true;
+
+  const locationLabel = normalizeComparableText(location?.label || location?.name || '');
+  if (locationLabel && normalized === locationLabel) return true;
+
+  if (isGenericSocialImportLabel(label)) return true;
+  if (isGenericLocationCompoundSocialImportLabel(label, location)) return true;
+  if (Number(labelsCount) > 1 && SOCIAL_IMPORT_LOCATION_TERMS.has(normalized)) return true;
+
+  const zone = await findBestZoneForSocialImportTerm(label);
+  return !!zone?._id;
+}
+
+function absoluteRequestUrl(req, path = '') {
+  const rawPath = String(path || '').trim();
+  if (!rawPath) return '';
+  if (/^https?:\/\//i.test(rawPath)) return rawPath;
+
+  const host = req.get('x-forwarded-host') || req.get('host');
+  if (!host) return rawPath;
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'https')
+    .split(',')[0]
+    .trim() || 'https';
+  return `${proto}://${host}${rawPath.startsWith('/') ? rawPath : `/${rawPath}`}`;
+}
+
+function buildSocialImportPreviewMedia(place = {}, req) {
+  const coverPath = String(place?.photoUrl || place?.photos?.[0]?.url || '').trim();
+  if (!coverPath) return undefined;
+  return {
+    coverUrl: absoluteRequestUrl(req, coverPath),
+    source: 'google_places_photo',
+  };
+}
+
+function selectBestSocialImportPreviewResults(rows = []) {
+  const byPlaceId = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const placeId = String(row?.googleCache?.placeId || '').trim();
+    if (!placeId) continue;
+
+    const existing = byPlaceId.get(placeId);
+    if (!existing || Number(row?._socialImport?.resolveScore || 0) > Number(existing?._socialImport?.resolveScore || 0)) {
+      byPlaceId.set(placeId, row);
+    }
+  }
+
+  return Array.from(byPlaceId.values())
+    .filter((row) => (
+      Number(row?._socialImport?.confidence || 0) >= 0.62 &&
+      Number(row?._socialImport?.resolveScore || 0) >= 0.72
+    ))
+    .sort((a, b) => {
+      const resolveDiff = Number(b?._socialImport?.resolveScore || 0) - Number(a?._socialImport?.resolveScore || 0);
+      if (resolveDiff) return resolveDiff;
+      const confidenceDiff = Number(b?._socialImport?.confidence || 0) - Number(a?._socialImport?.confidence || 0);
+      if (confidenceDiff) return confidenceDiff;
+      return Number(b?.ranking?.priority || 0) - Number(a?.ranking?.priority || 0);
+    })
+    .slice(0, 1);
 }
 
 async function findExistingActivityForGoogleCache(googleCache = {}, label = '', location = null) {
@@ -3292,6 +3510,8 @@ function normalizeSocialImportLabel(value = '') {
   const label = String(value || '')
     .replace(/https?:\/\/\S+/gi, '')
     .replace(/[@#]/g, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/([a-z0-9])\.([a-z0-9])/gi, '$1 $2')
     .replace(/[|•·]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -3360,6 +3580,17 @@ function extractSocialImportLabels(payload = {}) {
           .replace(/[_-]+/g, ' ')
           .replace(/([a-z])([A-Z])/g, '$1 $2'),
         'hashtag'
+      );
+    }
+
+    const mentionMatches = text.match(/@[\p{L}\p{N}_.-]{3,}/gu) || [];
+    for (const mention of mentionMatches) {
+      add(
+        mention
+          .replace(/^@/, '')
+          .replace(/[_.-]+/g, ' ')
+          .replace(/([a-z])([A-Z])/g, '$1 $2'),
+        'mention'
       );
     }
 

@@ -135,6 +135,7 @@ const PLACE_CACHE_FIELD_MASK = [
   'userRatingCount',
   'businessStatus',
   'types',
+  'photos',
   'googleMapsUri',
   'regularOpeningHours.periods',
   'regularOpeningHours.weekdayDescriptions',
@@ -190,6 +191,19 @@ function mapPlaceCachePayload(p = {}, fieldMask = PLACE_CACHE_FIELD_MASK) {
   const lat = Number(p?.location?.latitude);
   const lng = Number(p?.location?.longitude);
   const placeId = String(p?.id || p?.placeId || '').trim();
+  const photos = (Array.isArray(p?.photos) ? p.photos : [])
+    .map((photo) => {
+      const photoName = String(photo?.name || '').trim();
+      if (!photoName) return null;
+      return {
+        name: photoName,
+        url: buildInternalPhotoUrl(photoName),
+        width: Number.isFinite(Number(photo?.widthPx)) ? Number(photo.widthPx) : undefined,
+        height: Number.isFinite(Number(photo?.heightPx)) ? Number(photo.heightPx) : undefined,
+      };
+    })
+    .filter(Boolean);
+
   return {
     placeId,
     name: String(p?.displayName?.text || p?.name || '').trim(),
@@ -201,6 +215,8 @@ function mapPlaceCachePayload(p = {}, fieldMask = PLACE_CACHE_FIELD_MASK) {
     reviewsCount: Number.isFinite(Number(p?.userRatingCount)) ? Number(p.userRatingCount) : undefined,
     businessStatus: String(p?.businessStatus || '').trim() || undefined,
     types: Array.isArray(p?.types) ? p.types.map((type) => String(type || '').trim()).filter(Boolean) : [],
+    photoUrl: photos[0]?.url,
+    photos,
     googleMapsUri: String(p?.googleMapsUri || '').trim() || undefined,
     openingHours: p?.regularOpeningHours || undefined,
     timeZone: String(p?.timeZone?.id || '').trim() || undefined,
