@@ -287,6 +287,17 @@ const activitySchema = new Schema({
       reviewedAt: { type: Date },
       reviewedBy: { type: Types.ObjectId, ref: 'User' },
       notes: { type: String, trim: true },
+      socialProfile: {
+        platform: { type: String, trim: true },
+        handle: { type: String, trim: true },
+        url: { type: String, trim: true },
+        displayName: { type: String, trim: true },
+        biography: { type: String, trim: true },
+        category: { type: String, trim: true },
+        externalUrl: { type: String, trim: true },
+        isBusinessLike: { type: Boolean, default: false },
+        fetchedAt: { type: Date },
+      },
     }],
 
     googleCache: {

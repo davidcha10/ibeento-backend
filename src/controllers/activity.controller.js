@@ -1661,10 +1661,11 @@ exports.discoverPreviewSuggest = async (req, res) => {
 exports.importSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
-    const labels = extractSocialImportLabels(payload);
+    let labels = extractSocialImportLabels(payload);
     const url = String(payload?.url || '').trim();
     const text = String(payload?.text || '').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
+    labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
     const now = new Date();
     const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
     const postId = extractSocialPostId(normalizedUrl || url);
@@ -1714,21 +1715,24 @@ exports.importSocialActivities = async (req, res) => {
       : null;
     const resolvedCandidates = [];
     const unresolved = [];
-    const maxCandidates = Math.min(labels.length, Math.max(1, Number(payload?.limit || 8)));
+    const orderedLabels = prioritizeSocialImportLabels(labels);
+    const maxCandidates = Math.min(orderedLabels.length, Math.max(1, Math.min(25, Number(payload?.limit || 20))));
 
-    for (const item of labels.slice(0, maxCandidates)) {
+    for (const item of orderedLabels.slice(0, maxCandidates)) {
       const query = String(item?.label || '').trim();
       if (!query) continue;
       try {
+        if (!shouldResolveSocialImportLabel(item, labels)) {
+          unresolved.push({ label: query, reason: 'superseded_by_explicit_list' });
+          continue;
+        }
+
         if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
           unresolved.push({ label: query, reason: 'context_only' });
           continue;
         }
 
-        const searchQuery = [
-          query,
-          locationContext?.name || '',
-        ].filter(Boolean).join(' ');
+        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
           maxResultCount: 5,
@@ -1742,9 +1746,10 @@ exports.importSocialActivities = async (req, res) => {
         resolvedCandidates.push({
           label: query,
           source: item.source || 'candidate',
+          profile: item.profile,
           googleCache: selected,
           confidence: match.confidence,
-          evidence: text,
+          evidence: [text, item?.context].filter(Boolean).join('\n'),
           type: 'exact_place',
         });
       } catch (err) {
@@ -1836,10 +1841,11 @@ exports.importSocialActivities = async (req, res) => {
 exports.previewSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
-    const labels = extractSocialImportLabels(payload);
+    let labels = extractSocialImportLabels(payload);
     const url = String(payload?.url || '').trim();
     const text = String(payload?.text || '').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
+    labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
 
     if (!labels.length) {
       return res.status(400).json({
@@ -1857,21 +1863,24 @@ exports.previewSocialActivities = async (req, res) => {
       : null;
     const resolvedCandidates = [];
     const unresolved = [];
-    const maxCandidates = Math.min(labels.length, Math.max(1, Number(payload?.limit || 6)));
+    const orderedLabels = prioritizeSocialImportLabels(labels);
+    const maxCandidates = Math.min(orderedLabels.length, Math.max(1, Math.min(25, Number(payload?.limit || 20))));
 
-    for (const item of labels.slice(0, maxCandidates)) {
+    for (const item of orderedLabels.slice(0, maxCandidates)) {
       const query = String(item?.label || '').trim();
       if (!query) continue;
       try {
+        if (!shouldResolveSocialImportLabel(item, labels)) {
+          unresolved.push({ label: query, reason: 'superseded_by_explicit_list' });
+          continue;
+        }
+
         if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
           unresolved.push({ label: query, reason: 'context_only' });
           continue;
         }
 
-        const searchQuery = [
-          query,
-          locationContext?.name || '',
-        ].filter(Boolean).join(' ');
+        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
           maxResultCount: 5,
@@ -1899,9 +1908,10 @@ exports.previewSocialActivities = async (req, res) => {
           },
           sourceClaims: [buildGoogleCacheSocialSourceClaim({
             label: query,
+            profile: item.profile,
             googleCache: selected,
             confidence,
-            evidence: text,
+            evidence: [text, item?.context].filter(Boolean).join('\n'),
           }, {
             source,
             url,
@@ -1912,6 +1922,8 @@ exports.previewSocialActivities = async (req, res) => {
             resolveScore: match.resolveScore,
             signalSource: item?.source || 'candidate',
             signalQuality: match.signalQuality,
+            context: item?.context || undefined,
+            sequence: Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : undefined,
             originalLabel: query,
             previewOnly: true,
           },
@@ -1921,7 +1933,10 @@ exports.previewSocialActivities = async (req, res) => {
       }
     }
 
-    const previewResults = selectBestSocialImportPreviewResults(resolvedCandidates);
+    const previewResults = selectBestSocialImportPreviewResults(resolvedCandidates, {
+      hasExplicitList: labels.some((item) => isExplicitSocialImportListSource(item?.source)),
+      limit: payload?.limit,
+    });
 
     return res.status(200).json({
       success: true,
@@ -3091,6 +3106,10 @@ const SOCIAL_IMPORT_LOCATION_TERMS = new Set([
 ]);
 
 const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
+  mention_profile: 0.28,
+  business_profile: 0.28,
+  list_item: 0.24,
+  recommendation: 0.22,
   mention: 0.2,
   handle: 0.2,
   account: 0.2,
@@ -3106,6 +3125,40 @@ const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
   url: 0.02,
   candidate: 0.08,
 };
+
+const SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES = new Set([
+  'list_item',
+  'recommendation',
+]);
+
+const SOCIAL_IMPORT_PROFILE_FETCH_TIMEOUT_MS = 2500;
+const SOCIAL_IMPORT_PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SOCIAL_IMPORT_PROFILE_CACHE = new Map();
+
+const SOCIAL_IMPORT_BUSINESS_TERMS = new Set([
+  'bakery',
+  'bar',
+  'boutique',
+  'brewery',
+  'cafe',
+  'coffee',
+  'gallery',
+  'hotel',
+  'izakaya',
+  'lounge',
+  'matcha',
+  'museum',
+  'official',
+  'omakase',
+  'restaurant',
+  'roastery',
+  'shop',
+  'spa',
+  'store',
+  'studio',
+  'sushi',
+  'tea',
+]);
 
 function expandedComparableTokens(value = '') {
   const normalized = normalizeComparableText(value);
@@ -3158,7 +3211,10 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
   const placeName = normalizeComparableText(place?.name || '');
   const target = normalizeComparableText(label || '');
   const formattedAddress = normalizeComparableText(place?.formattedAddress || '');
-  const ctx = normalizeComparableText(context || '');
+  const ctx = normalizeComparableText([
+    context,
+    signal?.context,
+  ].filter(Boolean).join(' '));
   if (!placeName || !target) return 0;
 
   let score = 0.35;
@@ -3218,6 +3274,305 @@ function pickBestGoogleCachePlace(places = [], label = '', context = '', signal 
   const best = ranked[0];
   if (!best || best.confidence < 0.5 || best.resolveScore < 0.6) return null;
   return best;
+}
+
+function normalizeSocialImportHandle(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/^@/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, '')
+    .slice(0, 60);
+}
+
+function socialImportProfileUrlForHandle(handle = '', source = '') {
+  const safeHandle = normalizeSocialImportHandle(handle);
+  if (!safeHandle) return '';
+  const platform = String(source || '').trim().toLowerCase();
+  if (platform === 'tiktok') return `https://www.tiktok.com/@${safeHandle}`;
+  return `https://www.instagram.com/${safeHandle}/`;
+}
+
+function decodeHtmlEntities(value = '') {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_, code) => {
+      const parsed = String(code || '').toLowerCase().startsWith('x')
+        ? Number.parseInt(String(code).slice(1), 16)
+        : Number.parseInt(String(code), 10);
+      if (!Number.isFinite(parsed)) return '';
+      try {
+        return String.fromCodePoint(parsed);
+      } catch (err) {
+        return '';
+      }
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractHtmlAttribute(tag = '', attribute = '') {
+  const regex = new RegExp(`\\b${escapeRegExp(attribute)}\\s*=\\s*(['"])(.*?)\\1`, 'i');
+  const match = String(tag || '').match(regex);
+  return match?.[2] ? decodeHtmlEntities(match[2]) : '';
+}
+
+function extractMetaContent(html = '', keys = []) {
+  const wanted = new Set(keys.map((key) => String(key || '').trim().toLowerCase()).filter(Boolean));
+  const out = {};
+  const tags = String(html || '').match(/<meta\s+[^>]*>/gi) || [];
+  for (const tag of tags) {
+    const key = (
+      extractHtmlAttribute(tag, 'property') ||
+      extractHtmlAttribute(tag, 'name')
+    ).toLowerCase();
+    if (!key || !wanted.has(key)) continue;
+    const content = extractHtmlAttribute(tag, 'content');
+    if (content) out[key] = content;
+  }
+  return out;
+}
+
+function extractJsonStringField(html = '', field = '') {
+  const escapedField = escapeRegExp(field);
+  const patterns = [
+    new RegExp(`"${escapedField}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 'i'),
+    new RegExp(`\\\\?"${escapedField}\\\\?"\\s*:\\s*\\\\?"((?:\\\\.|[^"\\\\])*)\\\\?"`, 'i'),
+  ];
+  for (const pattern of patterns) {
+    const match = String(html || '').match(pattern);
+    if (!match?.[1]) continue;
+    try {
+      return decodeHtmlEntities(JSON.parse(`"${match[1].replace(/"/g, '\\"')}"`));
+    } catch (err) {
+      return decodeHtmlEntities(match[1].replace(/\\u([0-9a-f]{4})/gi, (_, hex) => (
+        String.fromCharCode(Number.parseInt(hex, 16))
+      )).replace(/\\\//g, '/').replace(/\\"/g, '"'));
+    }
+  }
+  return '';
+}
+
+function extractJsonBooleanField(html = '', field = '') {
+  const pattern = new RegExp(`"${escapeRegExp(field)}"\\s*:\\s*(true|false)`, 'i');
+  const match = String(html || '').match(pattern);
+  return match?.[1] ? match[1].toLowerCase() === 'true' : null;
+}
+
+function scoreSocialImportProfileBusinessLike(profile = {}) {
+  const haystack = normalizeComparableText([
+    profile.handle,
+    profile.displayName,
+    profile.biography,
+    profile.category,
+    profile.externalUrl,
+  ].filter(Boolean).join(' '));
+  if (!haystack) return 0;
+
+  let score = 0;
+  const tokens = new Set(haystack.split(' ').filter(Boolean));
+  for (const term of SOCIAL_IMPORT_BUSINESS_TERMS) {
+    if (tokens.has(term) || haystack.includes(term)) score += 0.12;
+  }
+  if (profile.isBusinessAccount === true) score += 0.32;
+  if (profile.category) score += 0.14;
+  if (profile.externalUrl) score += 0.08;
+  if (normalizeComparableText(profile.displayName || '') !== normalizeComparableText(profile.handle || '')) score += 0.06;
+
+  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
+}
+
+function parseInstagramProfileMetadata(html = '', handle = '') {
+  const metas = extractMetaContent(html, [
+    'description',
+    'og:description',
+    'og:title',
+    'twitter:title',
+  ]);
+  const title = metas['og:title'] || metas['twitter:title'] || '';
+  const description = metas['og:description'] || metas.description || '';
+
+  let displayName = '';
+  const titleMatch = title.match(/^(.+?)(?:\s+\(@[^)]+\))?\s+(?:on Instagram|• Instagram)/i);
+  if (titleMatch?.[1]) displayName = titleMatch[1].trim();
+  if (!displayName && title) displayName = title.replace(/\s*•\s*Instagram.*$/i, '').trim();
+
+  const biography = extractJsonStringField(html, 'biography');
+  const category = extractJsonStringField(html, 'category_name') || extractJsonStringField(html, 'category');
+  const externalUrl = extractJsonStringField(html, 'external_url') || extractJsonStringField(html, 'external_url_linkshimmed');
+  const isBusinessAccount = extractJsonBooleanField(html, 'is_business_account');
+
+  const profile = {
+    platform: 'instagram',
+    handle: normalizeSocialImportHandle(handle),
+    url: socialImportProfileUrlForHandle(handle, 'instagram'),
+    displayName: normalizeSocialImportLabel(displayName) || normalizeSocialImportLabel(handle),
+    biography: String(biography || description || '').slice(0, 500).trim(),
+    category: normalizeSocialImportLabel(category),
+    externalUrl: String(externalUrl || '').trim(),
+    isBusinessAccount,
+    fetchedAt: new Date(),
+  };
+  profile.businessScore = scoreSocialImportProfileBusinessLike(profile);
+  profile.isBusinessLike = profile.businessScore >= 0.26;
+  return profile;
+}
+
+async function fetchSocialImportProfile(handle = '', options = {}) {
+  const source = normalizeSocialImportSource(options?.source, options?.url);
+  const normalizedHandle = normalizeSocialImportHandle(handle);
+  const profileUrl = socialImportProfileUrlForHandle(normalizedHandle, source);
+  if (!normalizedHandle || !profileUrl || source !== 'instagram') return null;
+
+  const cacheKey = `${source}:${normalizedHandle}`;
+  const cached = SOCIAL_IMPORT_PROFILE_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < SOCIAL_IMPORT_PROFILE_CACHE_TTL_MS) {
+    return cached.profile;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SOCIAL_IMPORT_PROFILE_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(profileUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      },
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const profile = parseInstagramProfileMetadata(html, normalizedHandle);
+    SOCIAL_IMPORT_PROFILE_CACHE.set(cacheKey, {
+      profile,
+      cachedAt: Date.now(),
+    });
+    return profile;
+  } catch (err) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function sanitizeSocialImportProfileForStorage(profile = null) {
+  if (!profile || typeof profile !== 'object') return undefined;
+  return {
+    platform: String(profile.platform || '').trim() || undefined,
+    handle: normalizeSocialImportHandle(profile.handle),
+    url: String(profile.url || '').trim() || undefined,
+    displayName: String(profile.displayName || '').trim().slice(0, 120) || undefined,
+    biography: String(profile.biography || '').trim().slice(0, 500) || undefined,
+    category: String(profile.category || '').trim().slice(0, 120) || undefined,
+    externalUrl: String(profile.externalUrl || '').trim().slice(0, 300) || undefined,
+    isBusinessLike: !!profile.isBusinessLike,
+    fetchedAt: profile.fetchedAt || new Date(),
+  };
+}
+
+async function enrichSocialImportMentionLabels(labels = [], options = {}) {
+  const out = Array.isArray(labels) ? labels.map((item) => ({ ...item })) : [];
+  const mentionIndexes = out
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => ['mention', 'handle', 'account'].includes(String(item?.source || '').trim().toLowerCase()))
+    .slice(0, 5);
+
+  await Promise.all(mentionIndexes.map(async ({ item, index }) => {
+    const handle = normalizeSocialImportHandle(item?.handle || item?.label);
+    if (!handle) return;
+    const profile = await fetchSocialImportProfile(handle, options);
+    if (!profile) return;
+
+    const storedProfile = sanitizeSocialImportProfileForStorage(profile);
+    const displayName = normalizeSocialImportLabel(profile.displayName || '');
+    const context = [
+      item.context,
+      profile.category,
+      profile.biography,
+    ].filter(Boolean).join(' ');
+
+    out[index] = {
+      ...item,
+      label: profile.isBusinessLike && displayName ? displayName : item.label,
+      source: profile.isBusinessLike ? 'mention_profile' : item.source,
+      context: normalizeSocialImportLabel(context) || item.context,
+      profile: storedProfile,
+      handle,
+    };
+  }));
+
+  return out;
+}
+
+function isExplicitSocialImportListSource(source = '') {
+  return SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES.has(String(source || '').trim().toLowerCase());
+}
+
+function shouldResolveSocialImportLabel(item = {}, labels = []) {
+  const hasExplicitList = Array.isArray(labels) && labels.some((entry) => (
+    isExplicitSocialImportListSource(entry?.source)
+  ));
+  if (!hasExplicitList) return true;
+  return isExplicitSocialImportListSource(item?.source);
+}
+
+function prioritizeSocialImportLabels(labels = []) {
+  return (Array.isArray(labels) ? labels : [])
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const explicitDiff = Number(isExplicitSocialImportListSource(b.item?.source)) -
+        Number(isExplicitSocialImportListSource(a.item?.source));
+      if (explicitDiff) return explicitDiff;
+
+      const sourceDiff = getSocialImportSignalSourceWeight(b.item?.source) -
+        getSocialImportSignalSourceWeight(a.item?.source);
+      if (sourceDiff) return sourceDiff;
+
+      const contextDiff = Number(!!b.item?.context) - Number(!!a.item?.context);
+      if (contextDiff) return contextDiff;
+
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+function buildSocialImportGoogleSearchQuery(label = '', item = {}, locationContext = null) {
+  const expandedLabel = expandCompactSocialImportSearchLabel(label);
+  return [
+    label,
+    expandedLabel && expandedLabel !== label ? expandedLabel : '',
+    item?.context || '',
+    item?.profile?.displayName || '',
+    item?.profile?.category || '',
+    locationContext?.name || '',
+  ].filter(Boolean).join(' ').slice(0, 240);
+}
+
+function expandCompactSocialImportSearchLabel(label = '') {
+  const normalized = normalizeComparableText(label);
+  if (!normalized || normalized.includes(' ')) return normalized;
+
+  const terms = Array.from(new Set([
+    ...SOCIAL_IMPORT_GENERIC_TERMS,
+    ...SOCIAL_IMPORT_LOCATION_TERMS,
+  ]))
+    .filter((term) => term.length >= 4)
+    .sort((a, b) => b.length - a.length);
+
+  let expanded = normalized;
+  for (const term of terms) {
+    expanded = expanded.replace(new RegExp(`(${escapeRegExp(term)})`, 'g'), ' $1 ');
+  }
+
+  return expanded
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isResolvableGoogleActivityPlace(place = {}) {
@@ -3321,7 +3676,7 @@ function buildSocialImportPreviewMedia(place = {}, req) {
   };
 }
 
-function selectBestSocialImportPreviewResults(rows = []) {
+function selectBestSocialImportPreviewResults(rows = [], options = {}) {
   const byPlaceId = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
     const placeId = String(row?.googleCache?.placeId || '').trim();
@@ -3333,19 +3688,41 @@ function selectBestSocialImportPreviewResults(rows = []) {
     }
   }
 
-  return Array.from(byPlaceId.values())
+  let filtered = Array.from(byPlaceId.values())
     .filter((row) => (
       Number(row?._socialImport?.confidence || 0) >= 0.62 &&
       Number(row?._socialImport?.resolveScore || 0) >= 0.72
-    ))
+    ));
+
+  const explicitListRows = filtered.filter((row) => (
+    isExplicitSocialImportListSource(row?._socialImport?.signalSource)
+  ));
+  if (options?.hasExplicitList && explicitListRows.length) {
+    filtered = explicitListRows;
+  }
+
+  const maxResults = options?.hasExplicitList
+    ? Math.min(25, Math.max(1, Number(options?.limit || 20)))
+    : 1;
+
+  return filtered
     .sort((a, b) => {
+      if (options?.hasExplicitList) {
+        const aSequence = Number(a?._socialImport?.sequence);
+        const bSequence = Number(b?._socialImport?.sequence);
+        const aHasSequence = Number.isFinite(aSequence);
+        const bHasSequence = Number.isFinite(bSequence);
+        if (aHasSequence && bHasSequence && aSequence !== bSequence) return aSequence - bSequence;
+        if (aHasSequence !== bHasSequence) return aHasSequence ? -1 : 1;
+      }
+
       const resolveDiff = Number(b?._socialImport?.resolveScore || 0) - Number(a?._socialImport?.resolveScore || 0);
       if (resolveDiff) return resolveDiff;
       const confidenceDiff = Number(b?._socialImport?.confidence || 0) - Number(a?._socialImport?.confidence || 0);
       if (confidenceDiff) return confidenceDiff;
       return Number(b?.ranking?.priority || 0) - Number(a?.ranking?.priority || 0);
     })
-    .slice(0, 1);
+    .slice(0, maxResults);
 }
 
 async function findExistingActivityForGoogleCache(googleCache = {}, label = '', location = null) {
@@ -3496,6 +3873,7 @@ function buildGoogleCacheSocialSourceClaim(candidate = {}, options = {}) {
     confidence,
     status: 'pending',
     importedAt: new Date(),
+    socialProfile: sanitizeSocialImportProfileForStorage(candidate?.profile),
   };
 }
 
@@ -3511,6 +3889,7 @@ function normalizeSocialImportLabel(value = '') {
     .replace(/https?:\/\/\S+/gi, '')
     .replace(/[@#]/g, '')
     .replace(/[_]+/g, ' ')
+    .replace(/[\\/]+/g, ' ')
     .replace(/([a-z0-9])\.([a-z0-9])/gi, '$1 $2')
     .replace(/[|•·]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -3538,16 +3917,117 @@ function normalizeSocialImportLabel(value = '') {
   return label;
 }
 
+function stripSocialMetadataPrefix(line = '') {
+  const raw = String(line || '').trim();
+  if (!raw) return '';
+
+  if (/^(?:twitter:title|og:title|title)\s*:/i.test(raw)) {
+    const quoteIndex = raw.indexOf('"');
+    if (quoteIndex >= 0) return raw.slice(quoteIndex + 1).trim();
+    return '';
+  }
+
+  if (/^(?:description|og:description)\s*:/i.test(raw)) {
+    const quoteIndex = raw.indexOf('"');
+    if (quoteIndex >= 0) return raw.slice(quoteIndex + 1).trim();
+    return raw.replace(/^(?:description|og:description)\s*:/i, '').trim();
+  }
+
+  return raw.replace(/^(?:keywords)\s*:/i, 'keywords:').trim();
+}
+
+function extractSocialImportListItem(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const match = raw.match(/^\s*(?:\d{1,2}[.)]|[•*-])\s+(.+)$/u);
+  if (!match?.[1]) return null;
+
+  let body = match[1].trim();
+  let inlineContext = '';
+  const inlineParts = body.split(/\s+(?:-|–|—|@|📍)\s*/u).map((part) => part.trim()).filter(Boolean);
+  if (inlineParts.length > 1) {
+    body = inlineParts[0];
+    inlineContext = inlineParts.slice(1).join(' ');
+  }
+
+  const label = normalizeSocialImportLabel(body.replace(/^["']+|["']+$/g, ''));
+  if (!label) return null;
+  return {
+    label,
+    context: normalizeSocialImportLabel(inlineContext),
+  };
+}
+
+function extractSocialImportPinContext(line = '') {
+  const raw = stripSocialMetadataPrefix(line);
+  const match = raw.match(/(?:📍|location\s*:|place\s*:|at\s+)(.+)$/i);
+  if (!match?.[1]) return '';
+  return normalizeSocialImportLabel(match[1]);
+}
+
+function nextSocialImportListContext(lines = [], startIndex = 0) {
+  const contexts = [];
+  for (let i = startIndex + 1; i < Math.min(lines.length, startIndex + 4); i += 1) {
+    const line = stripSocialMetadataPrefix(lines[i] || '');
+    if (!line) continue;
+    if (extractSocialImportListItem(line)) break;
+
+    const pinContext = extractSocialImportPinContext(line);
+    if (pinContext) {
+      contexts.push(pinContext);
+      continue;
+    }
+
+    const normalized = normalizeSocialImportLabel(line);
+    const comparable = normalizeComparableText(normalized);
+    if (
+      normalized &&
+      normalized.length <= 60 &&
+      comparable &&
+      comparable.split(' ').length <= 5 &&
+      !/[.!?]{1,}$/.test(line)
+    ) {
+      contexts.push(normalized);
+    }
+
+    if (contexts.length) break;
+  }
+
+  return Array.from(new Set(contexts)).join(' ');
+}
+
 function extractSocialImportLabels(payload = {}) {
-  const seen = new Set();
   const out = [];
-  const add = (label, source = 'text') => {
+  const seen = new Map();
+  const add = (label, source = 'text', extra = {}) => {
     const cleaned = normalizeSocialImportLabel(label);
     if (!cleaned) return;
     const key = cleaned.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ label: cleaned, source });
+    const context = normalizeSocialImportLabel(extra?.context || '');
+    const sequence = Number(extra?.sequence);
+    const profile = sanitizeSocialImportProfileForStorage(extra?.profile);
+    const handle = normalizeSocialImportHandle(extra?.handle || '');
+    const existingIndex = seen.get(key);
+    if (existingIndex !== undefined) {
+      const existing = out[existingIndex];
+      const incomingWeight = getSocialImportSignalSourceWeight(source);
+      const existingWeight = getSocialImportSignalSourceWeight(existing?.source);
+      if (context && !existing.context) existing.context = context;
+      if (Number.isFinite(sequence) && !Number.isFinite(Number(existing.sequence))) existing.sequence = sequence;
+      if (profile && !existing.profile) existing.profile = profile;
+      if (handle && !existing.handle) existing.handle = handle;
+      if (incomingWeight > existingWeight) existing.source = source;
+      return;
+    }
+
+    seen.set(key, out.length);
+    out.push({
+      label: cleaned,
+      source,
+      ...(context ? { context } : {}),
+      ...(Number.isFinite(sequence) ? { sequence } : {}),
+      ...(profile ? { profile } : {}),
+      ...(handle ? { handle } : {}),
+    });
   };
 
   const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
@@ -3555,15 +4035,41 @@ function extractSocialImportLabels(payload = {}) {
     if (typeof candidate === 'string') {
       add(candidate, 'candidate');
     } else if (candidate && typeof candidate === 'object') {
-      add(candidate.label || candidate.name || candidate.extractedName || '', candidate.source || 'candidate');
+      add(candidate.label || candidate.name || candidate.extractedName || '', candidate.source || 'candidate', {
+        context: candidate.context,
+        sequence: candidate.sequence,
+        profile: candidate.profile,
+        handle: candidate.handle,
+      });
     }
   }
 
   const text = String(payload?.text || '').trim();
   if (text) {
-    for (const line of text.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
-      const pinMatch = line.match(/(?:📍|location\s*:|place\s*:|at\s+)(.+)$/i);
-      if (pinMatch?.[1]) add(pinMatch[1], 'pin');
+    const lines = text.split(/\r?\n/).map((entry) => stripSocialMetadataPrefix(entry)).filter(Boolean);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const listItem = extractSocialImportListItem(line);
+      if (listItem?.label) {
+        add(listItem.label, 'list_item', {
+          context: [listItem.context, nextSocialImportListContext(lines, index)].filter(Boolean).join(' '),
+          sequence: index,
+        });
+        continue;
+      }
+
+      const pinContext = extractSocialImportPinContext(line);
+      if (pinContext) add(pinContext, 'pin');
+
+      if (/^keywords\s*:/i.test(line)) {
+        line
+          .replace(/^keywords\s*:/i, '')
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+          .forEach((entry) => add(entry, 'keyword'));
+        continue;
+      }
 
       for (const part of line.split(/[|,;]+/).map((entry) => entry.trim()).filter(Boolean)) {
         if (/^[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}$/u.test(part)) {
@@ -3572,7 +4078,8 @@ function extractSocialImportLabels(payload = {}) {
       }
     }
 
-    const hashtagMatches = text.match(/#[\p{L}\p{N}_-]{3,}/gu) || [];
+    const candidateText = lines.join('\n');
+    const hashtagMatches = candidateText.match(/#[\p{L}\p{N}_-]{3,}/gu) || [];
     for (const tag of hashtagMatches) {
       add(
         tag
@@ -3583,22 +4090,23 @@ function extractSocialImportLabels(payload = {}) {
       );
     }
 
-    const mentionMatches = text.match(/@[\p{L}\p{N}_.-]{3,}/gu) || [];
+    const mentionMatches = candidateText.match(/@[\p{L}\p{N}_.-]{3,}/gu) || [];
     for (const mention of mentionMatches) {
       add(
         mention
           .replace(/^@/, '')
           .replace(/[_.-]+/g, ' ')
           .replace(/([a-z])([A-Z])/g, '$1 $2'),
-        'mention'
+        'mention',
+        { handle: mention.replace(/^@/, '') }
       );
     }
 
-    const captionMatches = text.match(/\b[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}\b/gu) || [];
+    const captionMatches = candidateText.match(/\b[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}\b/gu) || [];
     for (const match of captionMatches) add(match, 'caption');
   }
 
-  return out.slice(0, 16);
+  return out.slice(0, 24);
 }
 
 function zoneTypePriority(zone = {}) {
