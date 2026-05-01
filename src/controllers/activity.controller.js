@@ -1730,6 +1730,16 @@ exports.importSocialActivities = async (req, res) => {
           continue;
         }
 
+        if (isSocialImportAuthorNoiseLabel(item, text)) {
+          unresolved.push({ label: query, reason: 'author_profile_ignored' });
+          continue;
+        }
+
+        if (isWeakSocialImportDiscoveryLabel(item)) {
+          unresolved.push({ label: query, reason: 'weak_discovery_signal_needs_media_analysis' });
+          continue;
+        }
+
         if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
           unresolved.push({ label: query, reason: 'context_only' });
           continue;
@@ -1761,6 +1771,7 @@ exports.importSocialActivities = async (req, res) => {
     }
 
     if (!resolvedCandidates.length) {
+      const needsMediaAnalysis = socialImportNeedsMediaAnalysis(labels, resolvedCandidates, unresolved);
       await upsertSocialImportLinkResolution({
         normalizedUrl,
         originalUrl: url,
@@ -1768,16 +1779,23 @@ exports.importSocialActivities = async (req, res) => {
         postId,
         labels,
         resolvedActivities: [],
-        status: 'failed',
-        error: 'No candidates could be resolved with Google Places.',
+        status: needsMediaAnalysis ? 'needs_media_analysis' : 'failed',
+        error: needsMediaAnalysis
+          ? 'No concrete place names were found in text metadata. Media transcription/OCR is required.'
+          : 'No candidates could be resolved with Google Places.',
         userId: requester,
         now,
       });
-      return res.status(422).json({
+      return res.status(needsMediaAnalysis ? 202 : 422).json({
         success: false,
-        message: 'No candidates could be resolved with Google Places.',
+        message: needsMediaAnalysis
+          ? 'No concrete place names were found in text metadata. Media transcription/OCR is required.'
+          : 'No candidates could be resolved with Google Places.',
         meta: {
           location,
+          status: needsMediaAnalysis ? 'needs_media_analysis' : 'failed',
+          needsMediaAnalysis,
+          mediaAnalysisSources: needsMediaAnalysis ? ['audio_transcript', 'video_ocr', 'thumbnail_vision'] : [],
           unresolved,
         },
       });
@@ -1852,6 +1870,39 @@ exports.previewSocialActivities = async (req, res) => {
       text,
     });
     labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
+    const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
+    const postId = extractSocialPostId(normalizedUrl || url);
+
+    const cachedLink = normalizedUrl
+      ? await SocialImportLink.findOne({ normalizedUrl }).lean()
+      : null;
+    const cachedActivities = await resolveCachedSocialImportActivities(cachedLink);
+    if (cachedActivities.length) {
+      await recordSocialImportLinkUsage({
+        normalizedUrl,
+        originalUrl: url,
+        source,
+        postId,
+        now: new Date(),
+      });
+      return res.status(200).json({
+        success: true,
+        data: cachedActivities,
+        meta: {
+          previewOnly: true,
+          cached: true,
+          linkId: String(cachedLink._id),
+          status: 'resolved',
+          needsMediaAnalysis: false,
+          mediaAnalysisSources: [],
+          source,
+          receivedCandidates: labels.length,
+          resolvedCount: cachedActivities.length,
+          candidateMatchesCount: cachedActivities.length,
+          unresolved: [],
+        },
+      });
+    }
 
     if (!labels.length) {
       return res.status(400).json({
@@ -1881,6 +1932,16 @@ exports.previewSocialActivities = async (req, res) => {
           continue;
         }
 
+        if (isSocialImportAuthorNoiseLabel(item, text)) {
+          unresolved.push({ label: query, reason: 'author_profile_ignored' });
+          continue;
+        }
+
+        if (isWeakSocialImportDiscoveryLabel(item)) {
+          unresolved.push({ label: query, reason: 'weak_discovery_signal_needs_media_analysis' });
+          continue;
+        }
+
         if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
           unresolved.push({ label: query, reason: 'context_only' });
           continue;
@@ -1898,32 +1959,45 @@ exports.previewSocialActivities = async (req, res) => {
         }
         const selected = match.place;
         const confidence = match.confidence;
+        const googleCache = buildGoogleCachePayload(selected);
+        let existingActivity = await Activity.findOne({ 'googleCache.placeId': googleCache.placeId }).lean();
+        if (!existingActivity) {
+          existingActivity = await findExistingActivityForGoogleCache(googleCache, query, location);
+        }
+        if (existingActivity?._id) {
+          existingActivity = await Activity.findById(existingActivity._id).lean() || existingActivity;
+        }
+        const sourceClaim = buildGoogleCacheSocialSourceClaim({
+          label: query,
+          profile: item.profile,
+          googleCache: selected,
+          confidence,
+          evidence: [text, item?.context].filter(Boolean).join('\n'),
+        }, {
+          source,
+          url,
+          text,
+        });
         resolvedCandidates.push({
-          name: selected.name || query,
-          nameSource: 'google_cache',
-          visibility: 'imported_private',
-          type: inferActivityTypeFromGoogleTypes(selected.types),
-          googleCache: buildGoogleCachePayload(selected),
-          media: buildSocialImportPreviewMedia(selected, req),
-          ranking: {
-            ratingAvg: 0,
-            reviewsCount: 0,
-            priority: calculatePriorityFromGoogleCache(selected),
-            prioritySource: 'google_cache_user_trend',
-            priorityFormulaVersion: 'google-cache-v1',
-          },
-          sourceClaims: [buildGoogleCacheSocialSourceClaim({
-            label: query,
-            profile: item.profile,
-            googleCache: selected,
-            confidence,
-            evidence: [text, item?.context].filter(Boolean).join('\n'),
-          }, {
-            source,
-            url,
-            text,
-          })],
+          ...(existingActivity || {
+            name: selected.name || query,
+            nameSource: 'google_cache',
+            visibility: 'imported_private',
+            type: inferActivityTypeFromGoogleTypes(selected.types),
+            ranking: {
+              ratingAvg: 0,
+              reviewsCount: 0,
+              priority: calculatePriorityFromGoogleCache(selected),
+              prioritySource: 'google_cache_user_trend',
+              priorityFormulaVersion: 'google-cache-v1',
+            },
+            sourceClaims: [sourceClaim],
+          }),
+          googleCache: existingActivity?.googleCache?.placeId ? existingActivity.googleCache : googleCache,
+          media: existingActivity?.media || buildSocialImportPreviewMedia(selected, req),
           _socialImport: {
+            existing: !!existingActivity?._id,
+            existingActivityId: existingActivity?._id ? String(existingActivity._id) : undefined,
             confidence,
             resolveScore: match.resolveScore,
             signalSource: item?.source || 'candidate',
@@ -1943,12 +2017,16 @@ exports.previewSocialActivities = async (req, res) => {
       hasExplicitList: labels.some((item) => isExplicitSocialImportListSource(item?.source)),
       limit: payload?.limit,
     });
+    const needsMediaAnalysis = socialImportNeedsMediaAnalysis(labels, resolvedCandidates, unresolved);
 
     return res.status(200).json({
       success: true,
       data: previewResults,
       meta: {
         previewOnly: true,
+        status: needsMediaAnalysis ? 'needs_media_analysis' : 'resolved',
+        needsMediaAnalysis,
+        mediaAnalysisSources: needsMediaAnalysis ? ['audio_transcript', 'video_ocr', 'thumbnail_vision'] : [],
         location,
         source,
         receivedCandidates: labels.length,
@@ -3088,20 +3166,47 @@ function normalizeComparableText(value = '') {
 
 const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'activity',
+  'all',
   'bar',
+  'beef',
+  'best',
+  'bio',
+  'bread',
   'cafe',
+  'cafes',
   'coffee',
+  'culinary',
+  'cuisine',
   'dessert',
+  'dining',
+  'experience',
   'food',
+  'foodie',
+  'foods',
+  'full',
   'hotel',
+  'icecream',
+  'japanese',
+  'latte',
+  'link',
   'matcha',
+  'market',
+  'markets',
+  'milk',
   'museum',
   'park',
   'place',
   'ramen',
   'restaurant',
+  'restaurants',
+  'street',
   'sushi',
   'tea',
+  'travel',
+  'trip',
+  'video',
+  'wagyu',
+  'youtube',
 ]);
 
 const SOCIAL_IMPORT_LOCATION_TERMS = new Set([
@@ -3135,6 +3240,15 @@ const SOCIAL_IMPORT_SIGNAL_SOURCE_WEIGHTS = {
 const SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES = new Set([
   'list_item',
   'recommendation',
+]);
+
+const SOCIAL_IMPORT_WEAK_DISCOVERY_SOURCES = new Set([
+  'caption',
+  'hashtag',
+  'keyword',
+  'metadata',
+  'text',
+  'url',
 ]);
 
 const SOCIAL_IMPORT_PROFILE_FETCH_TIMEOUT_MS = 2500;
@@ -3196,6 +3310,98 @@ function getSpecificSocialImportTokens(label = '') {
       !SOCIAL_IMPORT_GENERIC_TERMS.has(token) &&
       !SOCIAL_IMPORT_LOCATION_TERMS.has(token)
     ));
+}
+
+function compactTokenExplainedByWeakTerms(token = '') {
+  let rest = normalizeComparableText(token).replace(/\s+/g, '');
+  if (!rest) return true;
+
+  const weakTerms = Array.from(new Set([
+    ...SOCIAL_IMPORT_GENERIC_TERMS,
+    ...SOCIAL_IMPORT_LOCATION_TERMS,
+  ]))
+    .filter((term) => term.length >= 3)
+    .sort((a, b) => b.length - a.length);
+
+  let changed = true;
+  while (rest && changed) {
+    changed = false;
+    for (const term of weakTerms) {
+      if (!rest.includes(term)) continue;
+      rest = rest.replace(new RegExp(escapeRegExp(term), 'g'), '');
+      changed = true;
+    }
+  }
+
+  return rest.length <= 2;
+}
+
+function isWeakSocialImportDiscoveryLabel(item = {}) {
+  const source = String(item?.source || '').trim().toLowerCase();
+  if (!SOCIAL_IMPORT_WEAK_DISCOVERY_SOURCES.has(source)) return false;
+
+  const normalized = normalizeComparableText(item?.label || '');
+  if (!normalized) return true;
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (!tokens.length) return true;
+
+  const weakTokens = tokens.every((token) => (
+    SOCIAL_IMPORT_GENERIC_TERMS.has(token) ||
+    SOCIAL_IMPORT_LOCATION_TERMS.has(token) ||
+    compactTokenExplainedByWeakTerms(token)
+  ));
+  if (weakTokens) return true;
+
+  const specificTokens = getSpecificSocialImportTokens(normalized);
+  return !specificTokens.length;
+}
+
+function extractSocialImportAuthorSignals(text = '') {
+  const out = [];
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (!/^(?:twitter:title|og:title|title)\s*:/i.test(line)) continue;
+    const rawTitle = line.replace(/^(?:twitter:title|og:title|title)\s*:/i, '').trim();
+    const beforeQuote = rawTitle.split('"')[0] || rawTitle;
+    const authorPart = beforeQuote
+      .replace(/\s+on Instagram.*$/i, '')
+      .replace(/\s+•\s+Instagram.*$/i, '')
+      .trim();
+    if (authorPart) {
+      out.push(authorPart);
+      for (const part of authorPart.split(/\s*[|•]\s*/).map((entry) => entry.trim()).filter(Boolean)) {
+        out.push(part);
+      }
+    }
+
+    const handles = rawTitle.match(/@[\p{L}\p{N}_.-]{3,}/gu) || [];
+    for (const handle of handles) {
+      out.push(handle.replace(/^@/, ''));
+      out.push(handle.replace(/^@/, '').replace(/[_.-]+/g, ' '));
+    }
+  }
+
+  return Array.from(new Set(out.map((value) => normalizeComparableText(value)).filter(Boolean)));
+}
+
+function isSocialImportAuthorNoiseLabel(item = {}, text = '') {
+  const source = String(item?.source || '').trim().toLowerCase();
+  if (!['account', 'caption', 'handle', 'mention', 'mention_profile', 'profile', 'text'].includes(source)) {
+    return false;
+  }
+
+  const label = normalizeComparableText(item?.label || '');
+  if (!label) return false;
+
+  const authorSignals = extractSocialImportAuthorSignals(text);
+  if (!authorSignals.length) return false;
+
+  return authorSignals.some((signal) => (
+    signal === label ||
+    signal.includes(label) ||
+    label.includes(signal)
+  ));
 }
 
 function scoreSocialImportSignalQuality(label = '', source = '') {
@@ -3784,6 +3990,22 @@ function buildSocialImportPreviewMedia(place = {}, req) {
     coverUrl: absoluteRequestUrl(req, coverPath),
     source: 'google_places_photo',
   };
+}
+
+function socialImportNeedsMediaAnalysis(labels = [], resolvedCandidates = [], unresolved = []) {
+  if (Array.isArray(resolvedCandidates) && resolvedCandidates.length) return false;
+  const hasExplicitTextSignal = Array.isArray(labels) && labels.some((item) => (
+    isExplicitSocialImportListSource(item?.source) ||
+    ['mention_profile', 'business_profile', 'place', 'pin', 'recommendation'].includes(String(item?.source || '').trim().toLowerCase())
+  ));
+  if (hasExplicitTextSignal) return false;
+
+  const reasons = new Set((Array.isArray(unresolved) ? unresolved : [])
+    .map((item) => String(item?.reason || '').trim())
+    .filter(Boolean));
+  return reasons.has('weak_discovery_signal_needs_media_analysis') ||
+    !Array.isArray(labels) ||
+    labels.length === 0;
 }
 
 function selectBestSocialImportPreviewResults(rows = [], options = {}) {

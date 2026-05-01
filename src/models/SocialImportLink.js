@@ -15,7 +15,7 @@ const socialImportLinkSchema = new Schema(
     extraction: {
       status: {
         type: String,
-        enum: ['pending', 'resolved', 'failed'],
+        enum: ['pending', 'resolved', 'failed', 'needs_media_analysis'],
         default: 'pending',
         index: true,
       },
