@@ -1661,10 +1661,13 @@ exports.discoverPreviewSuggest = async (req, res) => {
 exports.importSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
-    let labels = extractSocialImportLabels(payload);
     const url = String(payload?.url || '').trim();
-    const text = String(payload?.text || '').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
+    const text = await buildSocialImportResolverText(payload, { source, url });
+    let labels = extractSocialImportLabels({
+      ...payload,
+      text,
+    });
     labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
     const now = new Date();
     const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
@@ -1841,10 +1844,13 @@ exports.importSocialActivities = async (req, res) => {
 exports.previewSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
-    let labels = extractSocialImportLabels(payload);
     const url = String(payload?.url || '').trim();
-    const text = String(payload?.text || '').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
+    const text = await buildSocialImportResolverText(payload, { source, url });
+    let labels = extractSocialImportLabels({
+      ...payload,
+      text,
+    });
     labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
 
     if (!labels.length) {
@@ -3134,6 +3140,9 @@ const SOCIAL_IMPORT_EXPLICIT_LIST_SOURCES = new Set([
 const SOCIAL_IMPORT_PROFILE_FETCH_TIMEOUT_MS = 2500;
 const SOCIAL_IMPORT_PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const SOCIAL_IMPORT_PROFILE_CACHE = new Map();
+const SOCIAL_IMPORT_URL_METADATA_FETCH_TIMEOUT_MS = 3500;
+const SOCIAL_IMPORT_URL_METADATA_CACHE_TTL_MS = 30 * 60 * 1000;
+const SOCIAL_IMPORT_URL_METADATA_CACHE = new Map();
 
 const SOCIAL_IMPORT_BUSINESS_TERMS = new Set([
   'bakery',
@@ -3312,12 +3321,14 @@ function decodeHtmlEntities(value = '') {
         return '';
       }
     })
-    .replace(/\s+/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 function extractHtmlAttribute(tag = '', attribute = '') {
-  const regex = new RegExp(`\\b${escapeRegExp(attribute)}\\s*=\\s*(['"])(.*?)\\1`, 'i');
+  const regex = new RegExp(`\\b${escapeRegExp(attribute)}\\s*=\\s*(['"])([\\s\\S]*?)\\1`, 'i');
   const match = String(tag || '').match(regex);
   return match?.[2] ? decodeHtmlEntities(match[2]) : '';
 }
@@ -3421,6 +3432,105 @@ function parseInstagramProfileMetadata(html = '', handle = '') {
   profile.businessScore = scoreSocialImportProfileBusinessLike(profile);
   profile.isBusinessLike = profile.businessScore >= 0.26;
   return profile;
+}
+
+function shouldFetchSocialImportUrlMetadata(url = '', source = '') {
+  const normalizedSource = normalizeSocialImportSource(source, url);
+  if (!['instagram', 'tiktok'].includes(normalizedSource)) return false;
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    return host === 'instagram.com' ||
+      host.endsWith('.instagram.com') ||
+      host === 'tiktok.com' ||
+      host.endsWith('.tiktok.com');
+  } catch (err) {
+    return false;
+  }
+}
+
+function extractSocialImportMetadataTextFromHtml(html = '') {
+  const metas = extractMetaContent(html, [
+    'description',
+    'og:description',
+    'og:title',
+    'twitter:title',
+    'keywords',
+  ]);
+  const ordered = [
+    ['description', metas.description],
+    ['og:description', metas['og:description']],
+    ['og:title', metas['og:title']],
+    ['twitter:title', metas['twitter:title']],
+    ['keywords', metas.keywords],
+  ];
+
+  return ordered
+    .map(([key, value]) => {
+      const normalized = String(value || '').trim();
+      return normalized ? `${key}: ${normalized}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function fetchSocialImportUrlMetadataText(url = '', source = '') {
+  const normalizedUrl = normalizeSocialImportUrl(url) || String(url || '').trim();
+  if (!shouldFetchSocialImportUrlMetadata(normalizedUrl, source)) return '';
+
+  const cached = SOCIAL_IMPORT_URL_METADATA_CACHE.get(normalizedUrl);
+  if (cached && Date.now() - cached.cachedAt < SOCIAL_IMPORT_URL_METADATA_CACHE_TTL_MS) {
+    return cached.text || '';
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SOCIAL_IMPORT_URL_METADATA_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(normalizedUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      },
+    });
+    if (!response.ok) return '';
+    const html = await response.text();
+    const text = extractSocialImportMetadataTextFromHtml(html).slice(0, 5000);
+    SOCIAL_IMPORT_URL_METADATA_CACHE.set(normalizedUrl, {
+      text,
+      cachedAt: Date.now(),
+    });
+    return text;
+  } catch (err) {
+    return '';
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function buildSocialImportResolverText(payload = {}, options = {}) {
+  const rawText = String(payload?.text || '').trim();
+  const url = String(options?.url || payload?.url || '').trim();
+  const source = normalizeSocialImportSource(options?.source || payload?.source, url);
+  const fetchedText = await fetchSocialImportUrlMetadataText(url, source);
+  const parts = [fetchedText, rawText].filter(Boolean);
+  if (!parts.length) return '';
+
+  const seen = new Set();
+  return parts
+    .join('\n')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      const key = line.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join('\n')
+    .slice(0, 7000);
 }
 
 async function fetchSocialImportProfile(handle = '', options = {}) {
