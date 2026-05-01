@@ -188,6 +188,7 @@ const activitySchema = new Schema({
           'reservation_recommended',
           'pay_on_site',
           'guided_service_available',
+          'not_accessible',
         ],
         default: 'unknown',
       },

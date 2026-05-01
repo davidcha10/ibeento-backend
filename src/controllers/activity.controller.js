@@ -1673,6 +1673,7 @@ exports.importSocialActivities = async (req, res) => {
     const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
     const postId = extractSocialPostId(normalizedUrl || url);
     const requester = normalizeObjectIdString(req?.user?._id || req?.user?.id);
+    const bypassCache = payload?.bypassCache === true || payload?.refresh === true;
 
     if (!labels.length) {
       return res.status(400).json({
@@ -1681,7 +1682,7 @@ exports.importSocialActivities = async (req, res) => {
       });
     }
 
-    const cachedLink = normalizedUrl
+    const cachedLink = !bypassCache && normalizedUrl
       ? await SocialImportLink.findOne({ normalizedUrl }).lean()
       : null;
     const cachedActivities = await resolveCachedSocialImportActivities(cachedLink);
@@ -1748,7 +1749,7 @@ exports.importSocialActivities = async (req, res) => {
         const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
-          maxResultCount: 5,
+          maxResultCount: 10,
         });
         const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
         if (!match?.place) {
@@ -1872,8 +1873,9 @@ exports.previewSocialActivities = async (req, res) => {
     labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
     const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
     const postId = extractSocialPostId(normalizedUrl || url);
+    const bypassCache = payload?.bypassCache === true || payload?.refresh === true;
 
-    const cachedLink = normalizedUrl
+    const cachedLink = !bypassCache && normalizedUrl
       ? await SocialImportLink.findOne({ normalizedUrl }).lean()
       : null;
     const cachedActivities = await resolveCachedSocialImportActivities(cachedLink);
@@ -1950,7 +1952,7 @@ exports.previewSocialActivities = async (req, res) => {
         const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
-          maxResultCount: 5,
+          maxResultCount: 10,
         });
         const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
         if (!match?.place) {
@@ -2881,6 +2883,171 @@ function extractLocalizedLabelsFromWikidataEntity(entity = {}) {
   return out;
 }
 
+function extractLocalizedDescriptionsFromWikidataEntity(entity = {}) {
+  const descriptions = entity && typeof entity === 'object' && entity.descriptions && typeof entity.descriptions === 'object'
+    ? entity.descriptions
+    : {};
+  const out = {};
+  for (const [localeRaw, payload] of Object.entries(descriptions)) {
+    const locale = normalizeLocaleKey(localeRaw);
+    const value = String(payload?.value || '').trim();
+    if (!locale || !value) continue;
+    out[locale] = value;
+  }
+  return out;
+}
+
+function wikidataEntityClaimValues(entity = {}, property = '') {
+  const claims = entity?.claims?.[property];
+  return Array.isArray(claims)
+    ? claims.map((claim) => claim?.mainsnak?.datavalue?.value).filter(Boolean)
+    : [];
+}
+
+function wikidataEntityClaimIds(entity = {}, property = '') {
+  return wikidataEntityClaimValues(entity, property)
+    .map((value) => String(value?.id || '').trim().toUpperCase())
+    .filter((id) => /^Q\d+$/.test(id));
+}
+
+function wikidataEntityCoordinate(entity = {}) {
+  const value = wikidataEntityClaimValues(entity, 'P625')[0];
+  const lat = Number(value?.latitude);
+  const lng = Number(value?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function commonsFileUrl(fileName = '') {
+  const name = String(fileName || '').trim();
+  return name ? `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}` : '';
+}
+
+function wikidataEntityMedia(entity = {}) {
+  const imageNames = wikidataEntityClaimValues(entity, 'P18')
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim());
+  const images = imageNames
+    .map((fileName, index) => ({
+      url: commonsFileUrl(fileName),
+      type: 'image',
+      caption: 'Wikimedia Commons',
+      order: index,
+    }))
+    .filter((image) => !!image.url);
+  return {
+    cover: images[0]?.url || undefined,
+    images,
+  };
+}
+
+function wikidataEntityStringClaim(entity = {}, property = '') {
+  const value = wikidataEntityClaimValues(entity, property)[0];
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value.text === 'string') return value.text.trim();
+  return '';
+}
+
+async function buildActivityDraftFromWikidataQid(qid) {
+  const entityMap = await wikidataGetEntitiesRaw([qid], {
+    languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar'],
+  });
+  const entity = entityMap?.[qid];
+  if (!entity || entity.missing) {
+    return { errorStatus: 404, errorMessage: `No Wikidata entity found for ${qid}` };
+  }
+
+  const names = extractLocalizedLabelsFromWikidataEntity(entity);
+  const descriptions = extractLocalizedDescriptionsFromWikidataEntity(entity);
+  const name = String(names.en || Object.values(names)[0] || qid).trim();
+  const slug = slugify(name);
+  const slugs = {};
+  for (const [locale, value] of Object.entries(names)) {
+    const localizedSlug = slugify(value || '');
+    if (localizedSlug) slugs[locale] = localizedSlug;
+  }
+  if (!slugs.en && slug) slugs.en = slug;
+
+  const coordinate = wikidataEntityCoordinate(entity);
+  const location = {};
+  if (coordinate) {
+    location.geo = { type: 'Point', coordinates: [coordinate.lng, coordinate.lat] };
+    location.geoSource = 'wikidata';
+    location.geoConfidence = 'high';
+  }
+
+  const address = wikidataEntityStringClaim(entity, 'P6375') || wikidataEntityStringClaim(entity, 'P969');
+  if (address) {
+    location.address = address;
+    location.addressSource = 'wikidata';
+  }
+
+  const adminParentQid = wikidataEntityClaimIds(entity, 'P131')[0];
+  if (adminParentQid) {
+    try {
+      const syncResult = await syncZoneHierarchyByQid(adminParentQid);
+      const leafZoneId = normalizeObjectIdString(syncResult?.leafZoneId);
+      if (leafZoneId) {
+        const loc = await resolveActivityLocationObject({ _id: leafZoneId, type: 'locality' });
+        Object.assign(location, loc);
+      }
+    } catch (err) {
+      console.warn('[wikidataDraft] unable to resolve admin zone', { qid, adminParentQid, message: err?.message });
+    }
+  }
+
+  const classIds = wikidataEntityClaimIds(entity, 'P31');
+  const activityCategoryIds = await resolveActivityCategoryIdsFromWikidataClassIds(classIds);
+  const media = wikidataEntityMedia(entity);
+  const website = wikidataEntityStringClaim(entity, 'P856');
+
+  const sourceClaim = {
+    source: 'wikidata',
+    url: `https://www.wikidata.org/wiki/${qid}`,
+    externalId: qid,
+    extractedName: name,
+    confidence: 0.9,
+    status: 'accepted',
+    importedAt: new Date(),
+  };
+
+  return {
+    data: {
+      name,
+      nameSource: 'open_data',
+      names,
+      slug,
+      slugs,
+      description: descriptions.en || Object.values(descriptions)[0] || '',
+      type: 'experience',
+      activityCategoryIds,
+      location,
+      media,
+      externalRef: {
+        provider: 'wikidata',
+        id: qid,
+        url: `https://www.wikidata.org/wiki/${qid}`,
+      },
+      sourceClaims: [sourceClaim],
+      accessHint: {
+        requirement: 'unknown',
+        confidence: 'low',
+        source: 'wikidata',
+        ...(website ? { message: `Official website: ${website}` } : {}),
+      },
+    },
+    meta: {
+      qid,
+      classIds,
+      namesAdded: Object.keys(names).length,
+      slugsAdded: Object.keys(slugs).length,
+      hasCoordinates: !!coordinate,
+      hasMedia: !!media.images.length,
+      resolvedZone: !!location.primaryZoneId,
+    },
+  };
+}
+
 async function resolveCandidateSpecificZoneLocation(candidate, baseLocObj = {}, perRequestCache = new Map()) {
   const adminParentQid =
     normalizeQid(candidate?._preview?.adminParentId) ||
@@ -3176,6 +3343,9 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'cafe',
   'cafes',
   'coffee',
+  'combo',
+  'crepe',
+  'crispy',
   'culinary',
   'cuisine',
   'dessert',
@@ -3189,8 +3359,11 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'guide',
   'hotel',
   'icecream',
+  'info',
   'japanese',
+  'jam',
   'latte',
+  'lemon',
   'link',
   'matcha',
   'market',
@@ -3207,6 +3380,7 @@ const SOCIAL_IMPORT_GENERIC_TERMS = new Set([
   'street',
   'sushi',
   'tea',
+  'tiramisu',
   'tuna',
   'travel',
   'trip',
@@ -3225,6 +3399,7 @@ const SOCIAL_IMPORT_LOCATION_TERMS = new Set([
   'japan',
   'japon',
   'kamakura',
+  'kanagawa',
   'sangenjaya',
   'shibuya',
   'tarui',
@@ -3457,6 +3632,39 @@ function scoreSocialImportSignalQuality(label = '', source = '') {
   return Math.max(0, Math.min(0.45, Number(score.toFixed(2))));
 }
 
+function extractSocialImportAddressNumberKeys(value = '') {
+  const raw = String(value || '');
+  const matches = raw.match(/\b\d{1,5}(?:[-\s]\d{1,5}){1,3}\b/g) || [];
+  if (/\b(?:address|prefecture|city|cho|gun|chome)\b|住所|所在地|県|市|町|郡|丁目/iu.test(raw)) {
+    matches.push(...(raw.match(/(?<!\d)\d{3,5}(?!\d)/g) || []));
+  }
+  return Array.from(new Set(matches.map((match) => (
+    normalizeComparableText(match).replace(/\s+/g, ' ').trim()
+  )).filter(Boolean)));
+}
+
+function socialImportAddressNumberMatches(address = '', keys = []) {
+  const normalizedAddress = normalizeComparableText(address);
+  if (!normalizedAddress || !Array.isArray(keys) || !keys.length) return false;
+  const addressNumbers = normalizedAddress.match(/\d+/g) || [];
+
+  return keys.some((key) => {
+    const normalizedKey = normalizeComparableText(key);
+    if (!normalizedKey) return false;
+    const compactKey = normalizedKey.replace(/\s+/g, '');
+    const compactAddress = normalizedAddress.replace(/\s+/g, '');
+    if (normalizedAddress.includes(normalizedKey) || compactAddress.includes(compactKey)) return true;
+
+    const keyNumbers = normalizedKey.match(/\d+/g) || [];
+    if (!keyNumbers.length || keyNumbers.length > addressNumbers.length) return false;
+    for (let index = 0; index <= addressNumbers.length - keyNumbers.length; index += 1) {
+      const slice = addressNumbers.slice(index, index + keyNumbers.length);
+      if (slice.every((number, offset) => number === keyNumbers[offset])) return true;
+    }
+    return false;
+  });
+}
+
 function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal = {}) {
   const placeName = normalizeComparableText(place?.name || '');
   const target = normalizeComparableText(label || '');
@@ -3471,7 +3679,11 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
   if (placeName === target) score += 0.5;
   else if (placeName.includes(target) || target.includes(placeName)) score += 0.35;
   else {
-    const targetTokens = new Set(expandedComparableTokens(target));
+    const specificTargetTokens = getSpecificSocialImportTokens(target);
+    const targetTokens = new Set(specificTargetTokens.length
+      ? specificTargetTokens
+      : expandedComparableTokens(target)
+    );
     const nameTokens = new Set(expandedComparableTokens(placeName));
     const hits = Array.from(targetTokens).filter((token) => nameTokens.has(token)).length;
     if (targetTokens.size) score += Math.min(0.28, (hits / targetTokens.size) * 0.28);
@@ -3480,6 +3692,15 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
   if (ctx && formattedAddress) {
     const contextTokens = ctx.split(' ').filter((token) => token.length > 3);
     if (contextTokens.some((token) => formattedAddress.includes(token))) score += 0.12;
+  }
+
+  const addressNumberKeys = extractSocialImportAddressNumberKeys([context, signal?.context].filter(Boolean).join(' '));
+  if (addressNumberKeys.length && formattedAddress) {
+    if (socialImportAddressNumberMatches(place?.formattedAddress || '', addressNumberKeys)) {
+      score += 0.16;
+    } else {
+      score -= 0.2;
+    }
   }
 
   if (validGeoPoint(place?.geo)) score += 0.08;
@@ -3500,6 +3721,10 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
 
 function pickBestGoogleCachePlace(places = [], label = '', context = '', signal = {}) {
   if (!Array.isArray(places) || !places.length) return null;
+  const addressNumberKeys = extractSocialImportAddressNumberKeys([
+    context,
+    signal?.context,
+  ].filter(Boolean).join(' '));
   const ranked = places
     .map((place) => ({
       place,
@@ -3509,7 +3734,11 @@ function pickBestGoogleCachePlace(places = [], label = '', context = '', signal 
     .filter((entry) => (
       entry?.place?.placeId &&
       validGeoPoint(entry.place.geo) &&
-      isResolvableGoogleActivityPlace(entry.place)
+      isResolvableGoogleActivityPlace(entry.place) &&
+      (
+        !addressNumberKeys.length ||
+        socialImportAddressNumberMatches(entry.place?.formattedAddress || '', addressNumberKeys)
+      )
     ))
     .map((entry) => ({
       ...entry,
@@ -4412,9 +4641,69 @@ function stripSocialImportProductDescriptor(value = '') {
     .trim();
 }
 
+function stripSocialImportNameWrapper(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/^[\[\【\(\（]+/, '')
+    .replace(/[\]\】\)\）]+$/, '')
+    .trim();
+}
+
 function isLikelySocialImportAreaPrefix(value = '') {
   const normalized = normalizeComparableText(value);
   return !!normalized && SOCIAL_IMPORT_LOCATION_TERMS.has(normalized);
+}
+
+function isSocialImportOperationalDetail(value = '') {
+  const raw = String(value || '').trim();
+  const normalized = normalizeComparableText(raw);
+  if (!normalized) return true;
+
+  return normalized === 'info' ||
+    normalized.includes('not a business') ||
+    normalized.includes('not a place') ||
+    normalized.includes('not specifically') ||
+    normalized.startsWith('speak about ') ||
+    normalized.startsWith('speaks about ') ||
+    normalized.startsWith('talk about ') ||
+    normalized.startsWith('talks about ') ||
+    /\b(?:weekday|weekdays|weekend|weekends|closed|holiday|holidays|hours?|open|opening|walk|walking|minute|min|from)\b/i.test(normalized) ||
+    /\b\d+\s*(?:min|minute|minutes|m|km)\b/i.test(normalized) ||
+    /\b\d{1,2}:\d{2}\b/.test(raw);
+}
+
+function isSocialImportProductOrDescription(value = '') {
+  const raw = String(value || '').trim();
+  const normalized = normalizeComparableText(raw);
+  if (!normalized) return true;
+
+  if (/[¥$€£]\s*\d|\b\d[\d,.]*\s*(?:yen|円|usd|eur|gbp)\b/i.test(raw)) return true;
+  if (/[!?。！？]/u.test(raw)) return true;
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length >= 3) {
+    const productHits = tokens.filter((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token)).length;
+    if (productHits >= 2 && !/\b(?:outer market|marketplace|market hall|food hall)\b/i.test(normalized)) return true;
+  }
+
+  return /\b(?:secret|refreshing|crispy|packed|rich|ingredient|combo|miracle|perfect|ultimate)\b/i.test(normalized);
+}
+
+function isLikelySocialImportBusinessName(value = '') {
+  const raw = stripSocialImportNameWrapper(value);
+  const label = normalizeSocialImportLabel(raw);
+  if (!label || isSocialImportInstructionLine(label)) return false;
+  if (isSocialImportOperationalDetail(label) || isSocialImportProductOrDescription(label)) return false;
+
+  const comparable = normalizeComparableText(label);
+  const tokens = comparable.split(' ').filter(Boolean);
+  if (!tokens.length || tokens.length > 6) return false;
+  if (tokens.every((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token) || SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return false;
+
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(label)) return true;
+  if (/[A-Z0-9]/.test(label)) return true;
+  if (tokens.length <= 3 && tokens.some((token) => !SOCIAL_IMPORT_GENERIC_TERMS.has(token) && !SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return true;
+  return false;
 }
 
 function normalizeExplicitSocialImportPlaceBody(value = '') {
@@ -4439,6 +4728,7 @@ function normalizeExplicitSocialImportPlaceBody(value = '') {
     };
   }
 
+  body = stripSocialImportNameWrapper(body);
   return {
     label: normalizeSocialImportLabel(body.replace(/^["']+|["']+$/g, '')),
     context: normalizeSocialImportContext(inlineContext),
@@ -4453,6 +4743,7 @@ function extractSocialImportListItem(line = '') {
   if (!match?.[1]) return null;
 
   const parsed = normalizeExplicitSocialImportPlaceBody(match[1]);
+  if (parsed?.label && !isLikelySocialImportBusinessName(parsed.label)) return null;
   return parsed?.label ? parsed : null;
 }
 
@@ -4480,8 +4771,9 @@ function isSocialImportAddressLikeLine(line = '') {
   const raw = stripSocialMetadataPrefix(line);
   const normalized = normalizeComparableText(raw);
   if (!normalized) return false;
+  if (isSocialImportOperationalDetail(raw)) return false;
   return /〒|\b\d{1,5}(?:[-\s]\d{1,5})?\b/.test(raw) &&
-    /\b(?:japan|tokyo|gifu|city|cho|gun|prefecture|chome)\b|東京|岐阜|住所|〒/iu.test(raw);
+    /\b(?:japan|tokyo|gifu|city|cho|gun|prefecture|chome|kamakura|kanagawa)\b|東京|岐阜|鎌倉|住所|〒/iu.test(raw);
 }
 
 function nextSocialImportAddressContext(lines = [], startIndex = 0) {
@@ -4555,10 +4847,18 @@ function nextSocialImportListContext(lines = [], startIndex = 0) {
       contexts.push(addressContext);
       continue;
     }
+    if (isSocialImportAddressLikeLine(line)) {
+      contexts.push(normalizeSocialImportContext(line));
+      continue;
+    }
 
     const pinContext = extractSocialImportPinContext(line);
     if (pinContext) {
       contexts.push(pinContext);
+      continue;
+    }
+
+    if (isSocialImportOperationalDetail(line) || isSocialImportProductOrDescription(line)) {
       continue;
     }
 
@@ -4578,6 +4878,15 @@ function nextSocialImportListContext(lines = [], startIndex = 0) {
   }
 
   return Array.from(new Set(contexts)).join(' ');
+}
+
+function buildFocusedSocialImportContext(...parts) {
+  const normalized = parts
+    .map((part) => normalizeSocialImportContext(part || ''))
+    .filter(Boolean);
+  const focused = normalized.filter((_, index) => index < normalized.length - 1);
+  if (focused.length) return Array.from(new Set(focused)).join(' ');
+  return normalized[0] || '';
 }
 
 function extractSocialImportLabels(payload = {}) {
@@ -4639,8 +4948,9 @@ function extractSocialImportLabels(payload = {}) {
       const line = lines[index];
       const listItem = extractSocialImportListItem(line);
       if (listItem?.label) {
+        const nearbyContext = nextSocialImportListContext(lines, index);
         add(listItem.label, 'list_item', {
-          context: [listItem.context, nextSocialImportListContext(lines, index), globalContext].filter(Boolean).join(' '),
+          context: buildFocusedSocialImportContext(listItem.context, nearbyContext, globalContext),
           sequence: index,
         });
         continue;
@@ -4648,8 +4958,9 @@ function extractSocialImportLabels(payload = {}) {
 
       const namedPlace = extractSocialImportNamedPlaceLine(line);
       if (namedPlace?.label) {
+        const nearbyContext = nextSocialImportListContext(lines, index);
         add(namedPlace.label, 'explicit_name', {
-          context: [namedPlace.context, nextSocialImportListContext(lines, index), globalContext].filter(Boolean).join(' '),
+          context: buildFocusedSocialImportContext(namedPlace.context, nearbyContext, globalContext),
           sequence: index,
         });
         continue;
@@ -4712,10 +5023,10 @@ function extractSocialImportLabels(payload = {}) {
     for (const match of captionMatches) add(match, 'caption');
   };
 
-  addLabelsFromTextBlock(payload?.text, 'text');
   addLabelsFromTextBlock(payload?.visibleText || payload?.ocrText || payload?.imageText, 'visible_text');
   addLabelsFromTextBlock(payload?.videoOcrText, 'video_ocr');
   addLabelsFromTextBlock(payload?.audioTranscript || payload?.transcript, 'audio_transcript');
+  addLabelsFromTextBlock(payload?.text, 'text');
 
   return out.slice(0, 24);
 }
@@ -5062,6 +5373,7 @@ exports.list = async (req, res) => {
         'reservation_recommended',
         'pay_on_site',
         'guided_service_available',
+        'not_accessible',
       ]);
       const requirements = String(accessRequirement)
         .split(',')
@@ -5586,7 +5898,7 @@ exports.upsertNamesSlugsFromWikidata = async (req, res) => {
     }
 
     const current = await Activity.findById(activityId)
-      .select('_id name slug names slugs externalRef ownership')
+      .select('_id name slug names slugs description location media activityCategoryIds externalRef sourceClaims accessHint ownership')
       .lean();
     if (!current?._id) {
       return res.status(404).json({ success: false, message: 'Activity not found' });
@@ -5607,18 +5919,16 @@ exports.upsertNamesSlugsFromWikidata = async (req, res) => {
       });
     }
 
-    const entityMap = await wikidataGetEntitiesRaw([qid], {
-      languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar'],
-    });
-    const entity = entityMap?.[qid];
-    if (!entity || entity.missing) {
-      return res.status(404).json({
+    const draftResult = await buildActivityDraftFromWikidataQid(qid);
+    if (draftResult.errorStatus) {
+      return res.status(draftResult.errorStatus).json({
         success: false,
-        message: `No Wikidata entity found for ${qid}`,
+        message: draftResult.errorMessage,
       });
     }
+    const draft = draftResult.data || {};
 
-    const fetchedNames = extractLocalizedLabelsFromWikidataEntity(entity);
+    const fetchedNames = sanitizeLocaleMap(draft.names, { slug: false });
     const existingNames = sanitizeLocaleMap(current?.names, { slug: false });
     const existingSlugs = sanitizeLocaleMap(current?.slugs, { slug: true });
 
@@ -5650,11 +5960,48 @@ exports.upsertNamesSlugsFromWikidata = async (req, res) => {
       }
     }
 
-    const updated = await Activity.findByIdAndUpdate(
-      activityId,
-      { $set: { names, slugs } },
-      { new: true, runValidators: true }
-    );
+    const setOps = { names, slugs };
+    const unsetOps = {};
+    let fieldsFilled = 0;
+
+    const setIfEmpty = (path, currentValue, nextValue) => {
+      const hasCurrent = Array.isArray(currentValue)
+        ? currentValue.length > 0
+        : currentValue !== undefined && currentValue !== null && String(currentValue).trim() !== '';
+      const hasNext = Array.isArray(nextValue)
+        ? nextValue.length > 0
+        : nextValue !== undefined && nextValue !== null && String(nextValue).trim() !== '';
+      if (hasCurrent || !hasNext) return;
+      setOps[path] = nextValue;
+      fieldsFilled += 1;
+    };
+
+    setIfEmpty('description', current.description, draft.description);
+    setIfEmpty('externalRef.provider', current?.externalRef?.provider, draft?.externalRef?.provider);
+    setIfEmpty('externalRef.id', current?.externalRef?.id, draft?.externalRef?.id);
+    setIfEmpty('externalRef.url', current?.externalRef?.url, draft?.externalRef?.url);
+    setIfEmpty('location.primaryZoneId', current?.location?.primaryZoneId, draft?.location?.primaryZoneId);
+    setIfEmpty('location.zonePathIds', current?.location?.zonePathIds, draft?.location?.zonePathIds);
+    setIfEmpty('location.timeZone', current?.location?.timeZone, draft?.location?.timeZone);
+    setIfEmpty('location.address', current?.location?.address, draft?.location?.address);
+    setIfEmpty('location.addressSource', current?.location?.addressSource, draft?.location?.addressSource);
+    setIfEmpty('location.geo', current?.location?.geo?.coordinates?.length ? current.location.geo : null, draft?.location?.geo);
+    setIfEmpty('location.geoSource', current?.location?.geoSource, draft?.location?.geoSource);
+    setIfEmpty('location.geoConfidence', current?.location?.geoConfidence, draft?.location?.geoConfidence);
+    setIfEmpty('media.cover', current?.media?.cover, draft?.media?.cover);
+    setIfEmpty('media.images', current?.media?.images, draft?.media?.images);
+    setIfEmpty('activityCategoryIds', current?.activityCategoryIds, draft?.activityCategoryIds);
+    setIfEmpty('accessHint.source', current?.accessHint?.source, draft?.accessHint?.source);
+
+    if ((!Array.isArray(current?.sourceClaims) || !current.sourceClaims.length) && Array.isArray(draft.sourceClaims) && draft.sourceClaims.length) {
+      setOps.sourceClaims = draft.sourceClaims;
+      fieldsFilled += 1;
+    }
+
+    const update = { $set: setOps };
+    if (Object.keys(unsetOps).length) update.$unset = unsetOps;
+
+    const updated = await Activity.findByIdAndUpdate(activityId, update, { new: true, runValidators: true });
     if (!updated) {
       return res.status(404).json({ success: false, message: 'Activity not found' });
     }
@@ -5666,11 +6013,46 @@ exports.upsertNamesSlugsFromWikidata = async (req, res) => {
         qid,
         namesAdded,
         slugsAdded,
+        fieldsFilled,
       },
     });
   } catch (error) {
     console.error('Error upserting activity localized names/slugs from Wikidata:', error);
     const message = String(error?.message || '').trim() || 'Failed to upsert names/slugs from Wikidata';
+    return res.status(500).json({ success: false, message, error });
+  }
+};
+
+exports.previewWikidataActivityDraft = async (req, res) => {
+  try {
+    const qid = normalizeQid(req?.body?.qid);
+    if (!qid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wikidata QID is required.',
+      });
+    }
+
+    if (!isAdminUser(req)) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const result = await buildActivityDraftFromWikidataQid(qid);
+    if (result.errorStatus) {
+      return res.status(result.errorStatus).json({
+        success: false,
+        message: result.errorMessage,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+      meta: result.meta,
+    });
+  } catch (error) {
+    console.error('Error building Wikidata activity draft:', error);
+    const message = String(error?.message || '').trim() || 'Failed to build Wikidata activity draft';
     return res.status(500).json({ success: false, message, error });
   }
 };

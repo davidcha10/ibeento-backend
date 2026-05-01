@@ -13,6 +13,7 @@
     "compliance:seed:sire": "node scripts/seed-compliance-pack-sire.js",
     "discover:qid": "node scripts/run-discover-from-qid.js",
     "google-cache:refresh": "node scripts/refresh-google-cache.js",
+    "social-import:test": "node scripts/test-social-import-preview.js",
     "zones:backfill:typecodes": "node scripts/backfill-zone-typecodes.js",
     "zones:seed:taxonomy": "node scripts/seed-zone-type-taxonomy.js"
   },

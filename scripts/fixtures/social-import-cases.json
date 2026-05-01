@@ -1,0 +1,262 @@
+[
+  {
+    "id": "kamakura-juseian-info-block",
+    "type": "single_place_info_block",
+    "url": "https://www.instagram.com/reel/DUYQQG0E1zS/?igsh=dHhvY21sOTVsYTk4",
+    "source": "instagram",
+    "notes": "Complex review-style caption. Product, address, station, hours and holidays should not become results.",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 1,
+      "results": [
+        {
+          "anyNameContains": [
+            "寿清庵 鎌倉",
+            "Juseian Kamakura"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "Kamakura Chacha",
+        "ATELIER MATCHA",
+        "Nikura",
+        "Kamakura Station",
+        "Maker's Shirt",
+        "la boutique de yukinoshita"
+      ]
+    }
+  },
+  {
+    "id": "shibuya-explicit-food-list",
+    "type": "explicit_emoji_list",
+    "url": "https://www.instagram.com/reel/DWTFtCeydQb/?igsh=MWE1dGR4YTZ6Y3ZkMg==",
+    "source": "instagram",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 5,
+      "results": [
+        {
+          "anyNameContains": [
+            "Flipper"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "EDW yellow"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Cha Cafe"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Menchirashi"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Hakata Furyu"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "109"
+      ]
+    }
+  },
+  {
+    "id": "tokyo-kitani-name-address",
+    "type": "name_plus_address",
+    "url": "https://www.instagram.com/reel/DToaEviD0qn/?igsh=ZTZvaXNxdzlyNDdv",
+    "source": "instagram",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 1,
+      "results": [
+        {
+          "anyNameContains": [
+            "Tokyo Kitani"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "Tsukiji Fish Market",
+        "Kamakura"
+      ]
+    }
+  },
+  {
+    "id": "tokyo-matcha-numbered-japanese-list",
+    "type": "japanese_numbered_list",
+    "url": "https://www.instagram.com/reel/DXtk3umj6HY/?igsh=MWpsMDJyaGpsaHdvcQ==",
+    "source": "instagram",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 8,
+      "results": [
+        {
+          "anyNameContains": [
+            "寿清庵 鎌倉",
+            "Kotobuki Seian"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "THREE"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "safn"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Nanaya"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Chanoma"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Orions",
+            "オリオンズ"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "PARK STORE"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Mitsuya"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "Hanayashiki",
+        "L'Osier"
+      ]
+    }
+  },
+  {
+    "id": "tokyo-food-audio-transcript-fallback",
+    "type": "metadata_weak_audio_transcript_list",
+    "url": "https://www.instagram.com/reel/DTTCuarDTTF/?igsh=ajhyaXBjcTFsaG1r",
+    "source": "instagram",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 11,
+      "results": [
+        {
+          "anyNameContains": [
+            "Age.3",
+            "Age 3"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "American Diner Andra",
+            "Andra"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "BUTTER Tokyo Shisha Cafe",
+            "Butter"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Izumo"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "The Front Room",
+            "Front Room"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Tsukiji Outer Market",
+            "Fish Market Tsukiji"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Benizuru"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Menchirashi"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "7-Eleven",
+            "7 Eleven"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "Ginza Hachigou",
+            "Hachigou"
+          ]
+        },
+        {
+          "anyNameContains": [
+            "WAGYUMAFIA DISTRICT",
+            "Wagyumafia"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "Shibuya Crossing",
+        "WOMB",
+        "Kamakura",
+        "Not a business",
+        "Speak about Yoshi"
+      ]
+    },
+    "notes": "Metadata only has weak Tokyo food context, but fallback audio transcript/OCR provides a structured list. Non-business mentions should be ignored.",
+    "payload": {
+      "audioTranscript": "1. Age 3\n2. American Diner Andra\n3. BUTTER Tokyo Shisha Cafe\n4. Izumo\n5. The Front Room Deli Restaurant Marunouchi\n6. Fish Market Tsukiji Outer Market\n7. Benizuru\n8. Menchirashi\n9. Not a business specifically but a dish\n10. 7-Eleven\n11. Ginza Hachigou\n12. Speak about Yoshi\n13. WAGYUMAFIA DISTRICT"
+    }
+  },
+  {
+    "id": "gifu-gourman-vital-key-value",
+    "type": "key_value_name_address",
+    "url": "https://www.instagram.com/reel/DWBP4GgCE2_/?igsh=MTM3OHNsY2diNW8ybg==",
+    "source": "instagram",
+    "expected": {
+      "status": "resolved",
+      "needsMediaAnalysis": false,
+      "exactResults": 1,
+      "results": [
+        {
+          "anyNameContains": [
+            "Guruman Vital",
+            "Gourman Vital",
+            "グルマンヴィタル"
+          ]
+        }
+      ],
+      "unexpectedNameContains": [
+        "岐阜店"
+      ]
+    }
+  }
+]

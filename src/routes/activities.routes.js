@@ -17,6 +17,7 @@ router.post('/discover-preview-suggest', activityController.discoverPreviewSugge
 router.post('/discover-preview-one', activityController.discoverPreviewOne);
 router.post('/import/social/preview', activityController.previewSocialActivities);
 router.post('/import/social', auth, activityController.importSocialActivities);
+router.post('/wikidata/draft', auth, activityController.previewWikidataActivityDraft);
 router.post('/:id/acquire', auth, activityController.acquireOwnership);
 router.post('/:id/accept-import', auth, activityController.acceptImportedActivity);
 router.post('/:id/upsert-names-slugs-from-wikidata', auth, activityController.upsertNamesSlugsFromWikidata);
