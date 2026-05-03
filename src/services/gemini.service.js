@@ -13,8 +13,6 @@ What counts as a place:
 - Hotels, hostels, resorts, vacation rentals
 - Tourist attractions, museums, monuments, landmarks
 - Beaches, parks, natural sites, viewpoints
-- Neighborhoods, districts, city areas
-- Cities, towns, regions, countries (only if clearly the destination, not passing mentions)
 - Shops, markets, malls, specific stores
 
 What to ignore:
