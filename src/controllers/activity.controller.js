@@ -6,9 +6,11 @@ const Zone = require('../models/Zone');
 const ActivityCategory = require('../models/ActivityCategory');
 const DiscoverPreviewJob = require('../models/DiscoverPreviewJob');
 const SocialImportLink = require('../models/SocialImportLink');
+const UserFavorite = require('../models/UserFavorite');
 const { Service } = require('../models/Service');
 const { syncZoneHierarchyByQid } = require('./location.controller');
 const googlePlacesService = require('../services/google-places.service');
+const geminiService = require('../services/gemini.service');
 
 
 const {
@@ -1370,7 +1372,7 @@ exports.discoverPreviewStartJob = async (req, res) => {
 
     const requestKey = buildDiscoverPreviewJobRequestKey(payload);
     const reusableJob = await findReusableDiscoverPreviewJobByRequestKey(requestKey);
-    if (reusableJob?.status === 'running' || reusableJob?.status === 'queued' || reusableJob?.status === 'done') {
+    if (reusableJob?.status === 'running' || reusableJob?.status === 'queued') {
       startDiscoverPreviewPersistentWorker();
       return res.status(202).json({
         success: true,
@@ -1514,11 +1516,81 @@ exports.discoverPreviewJobResult = async (req, res) => {
 // ===== Discover Preview (OPEN DATA, NO Google) =====
 exports.discoverPreview = async (req, res) => {
   try {
-    const response = await runDiscoverPreviewCore(req.body || {});
+    const { locations = [], userId } = req.body || {};
+
+    if (!Array.isArray(locations)) {
+      return res.status(400).json({ success: false, message: 'locations[] must be an array' });
+    }
+    for (const loc of locations) {
+      if ((locations.length && !loc) || !loc._id || !loc.type) {
+        return res.status(400).json({ success: false, message: 'Each location needs _id and type' });
+      }
+    }
+
+    if (locations.length === 0) {
+      const dbActivities = await Activity.find({ active: true })
+        .populate('tags', 'name slug')
+        .sort({ 'ranking.priority': -1, createdAt: -1 })
+        .limit(80)
+        .lean();
+
+      const dbCategoryIds = Array.from(new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a))));
+      let categoriesMap = new Map();
+      if (dbCategoryIds.length) {
+        const categories = await ActivityCategory.find({ _id: { $in: dbCategoryIds } }).lean();
+        categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
+      }
+      const enriched = dbActivities.map((a) => {
+        const activityCategoryIds = collectActivityCategoryIds(a);
+        const activityCategories = activityCategoryIds.map((id) => categoriesMap.get(String(id)) || null).filter(Boolean);
+        return { ...a, source: 'db', activityCategoryIds, activityCategories, activityCategory: activityCategories[0] || null };
+      });
+      const hydrated = await hydrateActivitiesZonePath(enriched);
+      const scored = await scoreActivitiesForUser(hydrated, userId);
+      return res.json({ success: true, data: scored, meta: { needsPopulation: [] } });
+    }
+
+    const allRows = [];
+    const needsPopulation = [];
+
+    for (const l of locations) {
+      const locFilter = buildActivityLocationFilter(l);
+      if (!locFilter) continue;
+
+      const dbActivities = await Activity.find(locFilter)
+        .populate('tags', 'name slug')
+        .sort({ 'ranking.priority': -1, createdAt: -1 })
+        .lean();
+
+      const dbCategoryIds = Array.from(new Set(dbActivities.flatMap((a) => collectActivityCategoryIds(a))));
+      let categoriesMap = new Map();
+      if (dbCategoryIds.length) {
+        const categories = await ActivityCategory.find({ _id: { $in: dbCategoryIds } }).lean();
+        categoriesMap = new Map(categories.map((c) => [String(c._id), c]));
+      }
+      const enriched = dbActivities.map((a) => {
+        const activityCategoryIds = collectActivityCategoryIds(a);
+        const activityCategories = activityCategoryIds.map((id) => categoriesMap.get(String(id)) || null).filter(Boolean);
+        return { ...a, source: 'db', activityCategoryIds, activityCategories, activityCategory: activityCategories[0] || null };
+      });
+      allRows.push(...enriched);
+
+      const minRequired = minRequiredByZoneType(l?.type);
+      if (dbActivities.length >= minRequired) continue;
+
+      const hasBeenSearched = await hasZoneBeenDiscoverPreviewSearched(l?._id);
+      if (hasBeenSearched) continue;
+
+      needsPopulation.push({ _id: String(l._id), type: l.type, label: l.label || l.name || '' });
+    }
+
+    const hydrated = await hydrateActivitiesZonePath(allRows);
+    const scored = await scoreActivitiesForUser(hydrated, userId);
+
     return res.json({
       success: true,
-      data: response.data,
-      meta: response.meta,
+      data: scored,
+      meta: { needsPopulation },
     });
   } catch (err) {
     const status = Number(err?.status) || 500;
@@ -1526,6 +1598,7 @@ exports.discoverPreview = async (req, res) => {
     return res.status(status).json({ success: false, message: err.message });
   }
 };
+
 
 // ===== Discover Preview One (OPEN DATA, search + create one activity) =====
 exports.discoverPreviewOne = async (req, res) => {
@@ -1662,201 +1735,324 @@ exports.importSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
     const url = String(payload?.url || '').trim();
+    const rawText = String(payload?.text || '').trim();
+    const imageBase64 = String(payload?.imageBase64 || '').trim() || null;
+    const imageMimeType = String(payload?.imageMimeType || 'image/jpeg').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
-    const text = await buildSocialImportResolverText(payload, { source, url });
-    let labels = extractSocialImportLabels({
-      ...payload,
-      text,
-    });
-    labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
     const now = new Date();
-    const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
-    const postId = extractSocialPostId(normalizedUrl || url);
     const requester = normalizeObjectIdString(req?.user?._id || req?.user?.id);
     const bypassCache = payload?.bypassCache === true || payload?.refresh === true;
 
-    if (!labels.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'No place candidates were provided.',
-      });
-    }
+    const normalizedUrl = normalizeSocialImportUrl(url) || null;
+    const postId = normalizedUrl ? extractSocialPostId(normalizedUrl) : null;
 
+    // 1. Cache: si el link ya fue procesado y tiene activities guardadas → retornar
     const cachedLink = !bypassCache && normalizedUrl
       ? await SocialImportLink.findOne({ normalizedUrl }).lean()
       : null;
     const cachedActivities = await resolveCachedSocialImportActivities(cachedLink);
     if (cachedActivities.length) {
-      await recordSocialImportLinkUsage({
-        normalizedUrl,
-        originalUrl: url,
-        source,
-        postId,
-        userId: requester,
-        now,
-      });
+      await recordSocialImportLinkUsage({ normalizedUrl, originalUrl: url, source, postId, userId: requester, now });
       return res.status(200).json({
         success: true,
         data: cachedActivities,
-        meta: {
-          cached: true,
-          linkId: String(cachedLink._id),
-          source,
-          receivedCandidates: labels.length,
-          resolvedCount: cachedActivities.length,
-          savedCount: cachedActivities.length,
-          unresolved: [],
-        },
+        meta: { cached: true, linkId: String(cachedLink._id), source, location: null },
       });
     }
 
-    const location = await resolveSocialImportLocation({
-      ...payload,
-      candidates: labels,
-    });
-    const locationContext = location?._id
-      ? await resolveLocationContextForPreview(location)
-      : null;
-    const resolvedCandidates = [];
-    const unresolved = [];
-    const orderedLabels = prioritizeSocialImportLabels(labels);
-    const maxCandidates = Math.min(orderedLabels.length, Math.max(1, Math.min(25, Number(payload?.limit || 20))));
+    // 2. Extracción con Gemini (texto primero → imagen fallback)
+    let labels = [];
+    let extractionMethod = 'none';
+    try {
+      const geminiResult = await geminiService.extractPlacesFromSocialContent({
+        text: rawText,
+        imageBase64: imageBase64 || null,
+        mimeType: imageMimeType,
+      });
+      if (geminiResult.places.length > 0) {
+        extractionMethod = `ai_${geminiResult.method}`;
+        labels = geminiResult.places
+          .map((p) => ({ label: normalizeSocialImportLabel(p.name), source: 'ai', confidence: p.confidence }))
+          .filter((item) => item.label);
+      }
+    } catch (err) {
+      console.warn('[social-import] Gemini extraction failed, falling back to regex', err?.message);
+    }
 
-    for (const item of orderedLabels.slice(0, maxCandidates)) {
+    // Fallback a regex
+    if (!labels.length) {
+      const enrichedText = await buildSocialImportResolverText(payload, { source, url });
+      let regexLabels = extractSocialImportLabels({ ...payload, text: enrichedText });
+      if (regexLabels.length) {
+        regexLabels = await enrichSocialImportMentionLabels(regexLabels, { source, url, text: enrichedText });
+      }
+      labels = regexLabels;
+      extractionMethod = 'regex';
+    }
+
+    if (!labels.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No place candidates were found in the shared content.',
+        meta: { extractionMethod },
+      });
+    }
+
+    // 3. Resolver contexto de ubicación
+    const location = await resolveSocialImportLocation({ ...payload, candidates: labels });
+    const locationContext = location?._id ? await resolveLocationContextForPreview(location) : null;
+
+    // 4. Para cada label: BD primero → Google Places si no está en BD
+    const results = [];
+    const unresolved = [];
+    const maxCandidates = Math.min(labels.length, 10);
+
+    for (const item of labels.slice(0, maxCandidates)) {
       const query = String(item?.label || '').trim();
       if (!query) continue;
+      // Descartar labels que son direcciones de calle (ej: "21 donggyo-ro 34-gil, Mapo-gu")
+      if (isStreetAddressLabel(query)) {
+        unresolved.push({ label: query, reason: 'street_address_ignored' });
+        continue;
+      }
       try {
-        if (!shouldResolveSocialImportLabel(item, labels)) {
-          unresolved.push({ label: query, reason: 'superseded_by_explicit_list' });
-          continue;
-        }
-
-        if (isSocialImportAuthorNoiseLabel(item, text)) {
-          unresolved.push({ label: query, reason: 'author_profile_ignored' });
-          continue;
-        }
-
-        if (isWeakSocialImportDiscoveryLabel(item)) {
-          unresolved.push({ label: query, reason: 'weak_discovery_signal_needs_media_analysis' });
-          continue;
-        }
-
-        if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
-          unresolved.push({ label: query, reason: 'context_only' });
-          continue;
-        }
-
         const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
           maxResultCount: 10,
         });
-        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
+        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || rawText, item);
         if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
         }
-        const selected = match.place;
-        resolvedCandidates.push({
-          label: query,
-          source: item.source || 'candidate',
-          profile: item.profile,
-          googleCache: selected,
-          confidence: match.confidence,
-          evidence: [text, item?.context].filter(Boolean).join('\n'),
-          type: 'exact_place',
+
+        const googleCache = buildGoogleCachePayload(match.place);
+        const placeId = String(googleCache?.placeId || '').trim();
+
+        // Buscar en BD: primero por placeId exacto, luego por geo/slug
+        let existingActivity = placeId
+          ? await Activity.findOne({ 'googleCache.placeId': placeId }).lean()
+          : null;
+        if (!existingActivity) {
+          existingActivity = await findExistingActivityForGoogleCache(googleCache, query, location);
+        }
+        if (existingActivity?._id) {
+          existingActivity = await Activity.findById(existingActivity._id).lean() || existingActivity;
+        }
+
+        results.push({
+          ...(existingActivity || {
+            name: googleCache.name || query,
+            type: inferActivityTypeFromGoogleTypes(googleCache.types),
+          }),
+          googleCache,
+          media: existingActivity?.media || buildSocialImportPreviewMedia(match.place, req),
+          _socialImport: {
+            exists: !!existingActivity?._id,
+            existingActivityId: existingActivity?._id ? String(existingActivity._id) : undefined,
+            confidence: match.confidence,
+            originalLabel: query,
+            previewOnly: true,
+          },
         });
       } catch (err) {
         unresolved.push({ label: query, reason: err?.message || 'search_failed' });
       }
     }
 
-    if (!resolvedCandidates.length) {
-      const needsMediaAnalysis = socialImportNeedsMediaAnalysis(labels, resolvedCandidates, unresolved);
-      await upsertSocialImportLinkResolution({
-        normalizedUrl,
-        originalUrl: url,
-        source,
-        postId,
-        labels,
-        resolvedActivities: [],
-        status: needsMediaAnalysis ? 'needs_media_analysis' : 'failed',
-        error: needsMediaAnalysis
-          ? 'No concrete place names were found in text metadata. Media transcription/OCR is required.'
-          : 'No candidates could be resolved with Google Places.',
-        userId: requester,
-        now,
-      });
-      return res.status(needsMediaAnalysis ? 202 : 422).json({
+    if (!results.length) {
+      return res.status(422).json({
         success: false,
-        message: needsMediaAnalysis
-          ? 'No concrete place names were found in text metadata. Media transcription/OCR is required.'
-          : 'No candidates could be resolved with Google Places.',
-        meta: {
-          location,
-          status: needsMediaAnalysis ? 'needs_media_analysis' : 'failed',
-          needsMediaAnalysis,
-          mediaAnalysisSources: needsMediaAnalysis ? ['audio_transcript', 'video_ocr', 'thumbnail_vision'] : [],
-          unresolved,
-        },
+        message: 'No candidates could be resolved with Google Places.',
+        meta: { location, extractionMethod, unresolved },
       });
     }
 
-    const persisted = await persistGoogleCacheSocialCandidates(resolvedCandidates, {
-      location,
-      locationContext,
-      source,
-      url,
-      normalizedUrl,
-      text,
-      now,
-    });
+    // 5. Guardar extracción en SocialImportLink (sólo metadata, sin resolvedActivities todavía)
+    if (normalizedUrl) {
+      await SocialImportLink.findOneAndUpdate(
+        { normalizedUrl },
+        {
+          $set: {
+            source,
+            postId,
+            'extraction.status': 'pending',
+            'extraction.method': extractionMethod,
+            'extraction.fetchedAt': now,
+            'extraction.candidates': labels.map((l) => ({
+              name: l.label,
+              confidence: l.confidence === 'high' ? 0.9 : l.confidence === 'medium' ? 0.6 : 0.3,
+              type: 'exact_place',
+            })),
+          },
+          $addToSet: { originalUrls: url },
+        },
+        { upsert: true, new: true }
+      ).lean();
+    }
 
-    const resolvedActivitiesForLink = persisted.saved.map((activity, index) => ({
-      activityId: activity._id,
-      role: index === 0 ? 'primary' : 'secondary',
-      candidateType: 'exact_place',
-      confidence: Number(activity?._socialImport?.confidence || 0.72),
-      status: activity?.audit?.status === 'approved' ? 'approved' : 'pending_review',
-    }));
-
-    const linkDoc = await upsertSocialImportLinkResolution({
-      normalizedUrl,
-      originalUrl: url,
-      source,
-      postId,
-      labels,
-      resolvedActivities: resolvedActivitiesForLink,
-      status: persisted.saved.length ? 'resolved' : 'failed',
-      error: persisted.saved.length ? '' : 'Resolved candidates could not be persisted.',
-      userId: requester,
-      now,
-    });
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      data: persisted.saved,
+      data: results,
       meta: {
-        location,
-        linkId: linkDoc?._id ? String(linkDoc._id) : undefined,
         cached: false,
         source,
+        location,
+        extractionMethod,
         receivedCandidates: labels.length,
-        resolvedCount: resolvedCandidates.length,
-        savedCount: persisted.saved.length,
-        skippedWithoutGeoCount: 0,
-        skippedWithoutGeo: [],
-        persistErrorCount: persisted.failed.length,
-        persistErrors: persisted.failed,
+        resolvedCount: results.length,
         unresolved,
       },
     });
   } catch (err) {
     console.error('Error importing social activities:', err);
-    return res.status(500).json({
-      success: false,
-      message: err?.message || 'Failed to import social activities',
+    return res.status(500).json({ success: false, message: err?.message || 'Failed to import social activities' });
+  }
+};
+
+exports.saveSocialImportFavorites = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const userId = normalizeObjectIdString(req?.user?._id || req?.user?.id);
+    const url = String(payload?.url || '').trim();
+    const source = normalizeSocialImportSource(payload?.source, url);
+    const places = Array.isArray(payload?.places) ? payload.places : [];
+    const location = payload?.location || null;
+    const now = new Date();
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    if (!places.length) {
+      return res.status(400).json({ success: false, message: 'No places selected' });
+    }
+
+    const normalizedUrl = normalizeSocialImportUrl(url) || null;
+    const postId = normalizedUrl ? extractSocialPostId(normalizedUrl) : null;
+    const locationContext = location?._id ? await resolveLocationContextForPreview(location) : null;
+    const baseLocObj = location?._id ? await resolveActivityLocationObject(location) : {};
+
+    const savedActivityIds = [];
+    const failedPlaces = [];
+
+    for (const place of places) {
+      try {
+        // Si ya tiene _id está en BD, solo necesitamos el ID
+        let activityId = normalizeObjectIdString(
+          place?._id || place?._socialImport?.existingActivityId
+        );
+
+        // Si no tiene _id hay que crear la activity
+        if (!activityId) {
+          const googleCache = place?.googleCache;
+          const placeId = String(googleCache?.placeId || '').trim();
+          const label = String(place?.name || googleCache?.name || '').trim();
+
+          if (!label || !placeId) continue;
+
+          // Double-check en BD antes de crear
+          let doc = await Activity.findOne({ 'googleCache.placeId': placeId }).lean();
+          if (!doc) {
+            doc = await findExistingActivityForGoogleCache(
+              buildGoogleCachePayload(googleCache), label, location
+            );
+          }
+
+          if (!doc) {
+            const builtGoogleCache = buildGoogleCachePayload(googleCache, { now });
+            if (!validGeoPoint(builtGoogleCache?.geo)) {
+              failedPlaces.push({ name: label, reason: 'missing_geo' });
+              continue;
+            }
+
+            const slug = await ensureUniqueActivitySlug(slugify(label));
+            const priority = calculatePriorityFromGoogleCache(builtGoogleCache);
+
+            try {
+              doc = await Activity.create({
+                name: label,
+                nameSource: 'source_claim',
+                slug,
+                description: '',
+                type: place.type || inferActivityTypeFromGoogleTypes(builtGoogleCache.types),
+                active: true,
+                visibility: 'imported_private',
+                location: baseLocObj,
+                media: { images: [] },
+                ranking: {
+                  ratingAvg: 0,
+                  reviewsCount: 0,
+                  priority,
+                  prioritySource: 'google_cache_user_trend',
+                  priorityFormulaVersion: 'google-cache-v1',
+                },
+                audit: {
+                  isAudited: false,
+                  status: 'pending',
+                  notes: 'Imported from social share flow.',
+                },
+                externalRef: { provider: 'social_import', url: url || undefined },
+                googleCache: builtGoogleCache,
+              });
+              doc = doc.toObject ? doc.toObject() : doc;
+            } catch (createErr) {
+              if (Number(createErr?.code) !== 11000) throw createErr;
+              doc = await Activity.findOne({ 'googleCache.placeId': placeId }).lean();
+              if (!doc) throw createErr;
+            }
+          }
+
+          activityId = normalizeObjectIdString(doc?._id);
+        }
+
+        if (!activityId) continue;
+
+        // Guardar como favorito (upsert para evitar duplicados)
+        await UserFavorite.findOneAndUpdate(
+          { userId, type: 'activity', activityId },
+          { $setOnInsert: { userId, type: 'activity', activityId } },
+          { upsert: true }
+        );
+
+        savedActivityIds.push(activityId);
+      } catch (err) {
+        console.warn('[social-import] Failed to save place', place?.name, err?.message);
+        failedPlaces.push({ name: place?.name || '?', reason: err?.message || 'unknown' });
+      }
+    }
+
+    // Actualizar SocialImportLink con resolvedActivities para cachear
+    if (normalizedUrl && savedActivityIds.length) {
+      await upsertSocialImportLinkResolution({
+        normalizedUrl,
+        originalUrl: url,
+        source,
+        postId,
+        labels: [],
+        resolvedActivities: savedActivityIds.map((actId, i) => ({
+          activityId: actId,
+          role: i === 0 ? 'primary' : 'secondary',
+          candidateType: 'exact_place',
+          confidence: 0.72,
+          status: 'pending_review',
+        })),
+        status: 'resolved',
+        userId,
+        now,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      savedCount: savedActivityIds.length,
+      failedCount: failedPlaces.length,
+      activityIds: savedActivityIds,
+      failed: failedPlaces,
     });
+  } catch (err) {
+    console.error('Error saving social import favorites:', err);
+    return res.status(500).json({ success: false, message: err?.message || 'Failed to save favorites' });
   }
 };
 
@@ -3544,6 +3740,19 @@ function compactTokenExplainedByWeakTerms(token = '') {
   }
 
   return rest.length <= 2;
+}
+
+// Detecta si un label es una dirección de calle en lugar de un nombre de lugar.
+// Ej: "21 donggyo-ro 34-gil, Mapo-gu, Seoul" → true
+// Ej: "Ramen Long Season" → false
+function isStreetAddressLabel(label = '') {
+  const s = String(label || '').trim();
+  if (!s) return false;
+  // Patrón: empieza con número seguido de texto tipo calle
+  if (/^\d+[\s-]/.test(s) && /[,-]/.test(s)) return true;
+  // Contiene abreviaturas de vía comunes (ro, gil, street, ave, blvd, etc.) precedidas de número
+  if (/\b\d+\s*(?:ro|gil|dong|gu|si|do|street|st|ave|blvd|rd|dr|ln|way|court|ct|place|pl)\b/i.test(s)) return true;
+  return false;
 }
 
 function isWeakSocialImportDiscoveryLabel(item = {}) {

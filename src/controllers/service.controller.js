@@ -26,6 +26,7 @@ function buildFilters(req) {
     category,
     subCategory,
     zoneId,
+    zoneIds,     // comma-separated list of zone IDs (OR match)
     primaryZoneId,
     countryId,
     regionId,
@@ -33,6 +34,9 @@ function buildFilters(req) {
     activityId,
     minPrice,
     maxPrice,
+    serviceCategory, // one or more serviceCategoryId values
+    minDurationH,
+    maxDurationH,
   } = req.query;
 
   const filter = {};
@@ -78,6 +82,12 @@ function buildFilters(req) {
   if (zoneId) {
     addZoneScopedCondition(zoneId, ['location.cityId', 'location.regionId', 'location.countryId']);
   }
+  if (zoneIds) {
+    const ids = String(zoneIds).split(',').map(s => s.trim()).filter(isValidObjectId).map(id => new mongoose.Types.ObjectId(id));
+    if (ids.length) {
+      locationConditions.push({ $or: [{ 'location.primaryZoneId': { $in: ids } }, { 'location.zonePathIds': { $in: ids } }] });
+    }
+  }
   if (cityId) {
     addZoneScopedCondition(cityId, ['location.cityId']);
   }
@@ -97,6 +107,22 @@ function buildFilters(req) {
     filter['pricing.basePrice'] = {};
     if (typeof minPrice !== 'undefined') filter['pricing.basePrice'].$gte = Number(minPrice);
     if (typeof maxPrice !== 'undefined') filter['pricing.basePrice'].$lte = Number(maxPrice);
+  }
+
+  // Service category (one or many IDs)
+  if (serviceCategory) {
+    const ids = (Array.isArray(serviceCategory) ? serviceCategory : String(serviceCategory).split(','))
+      .map(s => s.trim())
+      .filter(isValidObjectId)
+      .map(id => new mongoose.Types.ObjectId(id));
+    if (ids.length) filter.serviceCategoryId = { $in: ids };
+  }
+
+  // Duration range (hours) — applies to experience.durationHours
+  if (typeof minDurationH !== 'undefined' || typeof maxDurationH !== 'undefined') {
+    filter['experience.durationHours'] = {};
+    if (typeof minDurationH !== 'undefined') filter['experience.durationHours'].$gte = Number(minDurationH);
+    if (typeof maxDurationH !== 'undefined') filter['experience.durationHours'].$lte = Number(maxDurationH);
   }
 
   // Text search (simple, regex; swap for $text if you add text index)

@@ -1,6 +1,44 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const AI_LOG_PREFIX = '[AI][gemini]';
 
+const EXTRACTION_MODEL_ID = 'gemini-2.5-flash';
+const EXTRACTION_FALLBACK_MODEL_IDS = ['gemini-2.0-flash'];
+
+const PLACE_EXTRACTION_SYSTEM = `
+You are a place name extractor for a travel app.
+Your only task: find real, specific places mentioned in social media content.
+
+What counts as a place:
+- Named restaurants, cafes, bars, clubs, nightlife venues
+- Hotels, hostels, resorts, vacation rentals
+- Tourist attractions, museums, monuments, landmarks
+- Beaches, parks, natural sites, viewpoints
+- Neighborhoods, districts, city areas
+- Cities, towns, regions, countries (only if clearly the destination, not passing mentions)
+- Shops, markets, malls, specific stores
+
+What to ignore:
+- Generic travel words: travel, vacation, explore, adventure, wanderlust, holiday
+- Emotions, actions, opinions: amazing, loved, visited, recommended
+- Hashtags that are not specific place names (#fyp, #viral, #travel, #foodie)
+- Personal account handles (people, influencers, photographers): @username style that refers to a person
+- App or brand names that are not physical venues
+- Street addresses: lines that are just a number + street name + city/district (e.g. "21 donggyo-ro 34-gil, Mapo-gu, Seoul" — this is an address, not a place name)
+- Postal/zip codes, floor numbers, unit numbers
+
+Special rule for @mentions: if a mention clearly refers to a physical venue (restaurant, hotel, bar, cafe, attraction), extract it as a place name — remove the @ and convert the handle to a readable name (e.g. "@ramenlongseason" → "Ramen Long Season", "@noburestaurant" → "Nobu Restaurant"). If the mention refers to a person or it's ambiguous, ignore it.
+
+Output ONLY valid JSON with no extra text:
+{"places":[{"name":"<exact place name as mentioned>","confidence":"high"|"medium"|"low"}]}
+
+Confidence levels:
+- high: specific named venue or attraction ("Sagrada Família", "Nobu Restaurant", "Central Park")
+- medium: area, neighborhood, or city ("El Born", "Barcelona", "Tuscany")
+- low: inferred from context, not explicitly named
+
+Max 10 places. If none found, return: {"places":[]}
+`.trim();
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Advertencia suave si falta la key, pero no reventamos el proceso
@@ -17,6 +55,94 @@ const FALLBACK_MODEL_IDS = (process.env.GEMINI_FALLBACK_MODEL_IDS || 'gemini-2.5
   .map((v) => v.trim())
   .filter(Boolean)
   .filter((v, i, arr) => arr.indexOf(v) === i && v !== DEFAULT_MODEL_ID);
+
+async function generateWithModelParts(modelId, systemInstruction, parts, attempt) {
+  console.log(`${AI_LOG_PREFIX} extraction:attempt`, { modelId, attempt });
+  const model = getModel(modelId);
+
+  let result;
+  try {
+    result = await model.generateContent({
+      systemInstruction: { role: 'system', parts: [{ text: systemInstruction }] },
+      contents: [{ role: 'user', parts }],
+    });
+  } catch (err) {
+    console.error(`${AI_LOG_PREFIX} extraction:error`, { modelId, attempt, message: err?.message || err });
+    return {
+      ok: false,
+      data: { rawText: null, parsingError: 'generateContent failed', meta: { modelId, attempt, message: err?.message || String(err) } },
+    };
+  }
+
+  const response = result?.response;
+  const text = extractTextFromResponse(response);
+
+  if (!text) {
+    return { ok: false, data: buildNoCandidatesError(response, modelId, attempt) };
+  }
+
+  const parsed = tryParseLenientJson(text);
+  if (parsed.ok) {
+    return { ok: true, data: { ...parsed.value, meta: { modelId, attempt } } };
+  }
+
+  console.warn(`${AI_LOG_PREFIX} extraction:invalid-json`, { modelId, attempt, textPreview: String(text).slice(0, 200) });
+  return { ok: false, data: { rawText: text, parsingError: 'Invalid JSON', meta: { modelId, attempt } } };
+}
+
+/**
+ * Extrae nombres de lugares desde contenido de redes sociales.
+ * Primero intenta con texto. Si no encuentra nada y hay imagen, usa visión como fallback.
+ *
+ * @param {object} options
+ * @param {string} [options.text]
+ * @param {string|null} [options.imageBase64]
+ * @param {string} [options.mimeType]
+ * @returns {Promise<{places: Array<{name:string,confidence:string}>, method:string}>}
+ */
+async function extractPlacesFromSocialContent({ text = '', imageBase64 = null, mimeType = 'image/jpeg' } = {}) {
+  const hasText = String(text || '').trim().length > 0;
+  const hasImage = typeof imageBase64 === 'string' && imageBase64.length > 100;
+
+  if (!hasText && !hasImage) {
+    return { places: [], method: 'none' };
+  }
+
+  const modelsToTry = [EXTRACTION_MODEL_ID, ...EXTRACTION_FALLBACK_MODEL_IDS];
+
+  if (hasText) {
+    const parts = [{ text: `Extract places from this social media caption:\n\n${String(text).trim()}` }];
+    for (let i = 0; i < modelsToTry.length; i += 1) {
+      const out = await generateWithModelParts(modelsToTry[i], PLACE_EXTRACTION_SYSTEM, parts, i + 1);
+      if (out.ok) {
+        const places = Array.isArray(out.data?.places) ? out.data.places : [];
+        if (places.length > 0) {
+          console.log(`${AI_LOG_PREFIX} extraction:text:success`, { model: modelsToTry[i], count: places.length });
+          return { places, method: 'text' };
+        }
+        break;
+      }
+    }
+  }
+
+  if (hasImage) {
+    const parts = [
+      { text: 'Extract places visible in this social media screenshot or thumbnail:' },
+      { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
+    ];
+    for (let i = 0; i < modelsToTry.length; i += 1) {
+      const out = await generateWithModelParts(modelsToTry[i], PLACE_EXTRACTION_SYSTEM, parts, i + 1);
+      if (out.ok) {
+        const places = Array.isArray(out.data?.places) ? out.data.places : [];
+        console.log(`${AI_LOG_PREFIX} extraction:image:result`, { model: modelsToTry[i], count: places.length });
+        return { places, method: 'image' };
+      }
+    }
+  }
+
+  console.warn(`${AI_LOG_PREFIX} extraction:all-failed`, { hasText, hasImage });
+  return { places: [], method: 'failed' };
+}
 
 /**
  * Devuelve una instancia de modelo de Gemini configurada.
@@ -369,6 +495,45 @@ Constraints:
   };
 }
 
+/**
+ * Uses Gemini to identify the primary place featured in a social post.
+ * Returns the index of the best candidate from the list, or -1 if it can't decide.
+ *
+ * @param {string} text - Full caption/metadata text of the post
+ * @param {Array<{label: string, source: string, context?: string}>} candidates - Extracted candidates
+ * @returns {Promise<number>} - 0-based index of the primary candidate, or -1
+ */
+async function selectPrimaryPlaceWithAI(text = '', candidates = []) {
+  if (!candidates.length || !text) return -1;
+
+  const candidateList = candidates
+    .map((c, i) => `${i}: "${c.label}"${c.context ? ` (context: ${c.context})` : ''} [source: ${c.source}]`)
+    .join('\n');
+
+  const systemInstruction = `You are a place-extraction assistant. Given the caption or metadata of a social media post and a list of place candidates, identify which single candidate is the PRIMARY subject of the post — i.e., the place the video is actually about or filmed at. Respond with ONLY a JSON object: {"index": <number>}. If you cannot determine a primary place with confidence, respond with {"index": -1}.`;
+
+  const userPrompt = `POST TEXT:\n${String(text).slice(0, 3000)}\n\nCANDIDATES:\n${candidateList}`;
+
+  try {
+    const result = await generateWithModel(DEFAULT_MODEL_ID, systemInstruction, userPrompt, 0);
+    if (result?.ok && typeof result.data?.index === 'number') {
+      const idx = result.data.index;
+      return idx >= 0 && idx < candidates.length ? idx : -1;
+    }
+    // Try flash as fallback for speed
+    const fallback = await generateWithModel('gemini-2.5-flash', systemInstruction, userPrompt, 0);
+    if (fallback?.ok && typeof fallback.data?.index === 'number') {
+      const idx = fallback.data.index;
+      return idx >= 0 && idx < candidates.length ? idx : -1;
+    }
+  } catch (err) {
+    console.warn('[Gemini][selectPrimaryPlace] error', err?.message);
+  }
+  return -1;
+}
+
 module.exports = {
   generateItineraryResponse,
+  extractPlacesFromSocialContent,
+  selectPrimaryPlaceWithAI,
 };
