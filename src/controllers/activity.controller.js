@@ -1760,12 +1760,16 @@ exports.importSocialActivities = async (req, res) => {
       });
     }
 
-    // 2. Extracción con Gemini (texto primero → imagen fallback)
+    // 2. Enriquecer texto con metadata del URL (caption de Instagram, etc.)
+    const fetchedText = await buildSocialImportResolverText(payload, { source, url });
+    const fullText = [rawText, fetchedText].filter(Boolean).join('\n').trim();
+
+    // 3. Extracción con Gemini (texto primero → imagen fallback)
     let labels = [];
     let extractionMethod = 'none';
     try {
       const geminiResult = await geminiService.extractPlacesFromSocialContent({
-        text: rawText,
+        text: fullText,
         imageBase64: imageBase64 || null,
         mimeType: imageMimeType,
       });
@@ -1781,10 +1785,9 @@ exports.importSocialActivities = async (req, res) => {
 
     // Fallback a regex
     if (!labels.length) {
-      const enrichedText = await buildSocialImportResolverText(payload, { source, url });
-      let regexLabels = extractSocialImportLabels({ ...payload, text: enrichedText });
+      let regexLabels = extractSocialImportLabels({ ...payload, text: fullText });
       if (regexLabels.length) {
-        regexLabels = await enrichSocialImportMentionLabels(regexLabels, { source, url, text: enrichedText });
+        regexLabels = await enrichSocialImportMentionLabels(regexLabels, { source, url, text: fullText });
       }
       labels = regexLabels;
       extractionMethod = 'regex';
@@ -1805,6 +1808,7 @@ exports.importSocialActivities = async (req, res) => {
     // 4. Para cada label: BD primero → Google Places si no está en BD
     const results = [];
     const unresolved = [];
+    const seenPlaceIds = new Set();
     const maxCandidates = Math.min(labels.length, 10);
 
     for (const item of labels.slice(0, maxCandidates)) {
@@ -1829,6 +1833,13 @@ exports.importSocialActivities = async (req, res) => {
 
         const googleCache = buildGoogleCachePayload(match.place);
         const placeId = String(googleCache?.placeId || '').trim();
+
+        // Dedup: descartar si ya procesamos este placeId en este request
+        if (placeId && seenPlaceIds.has(placeId)) {
+          unresolved.push({ label: query, reason: 'duplicate_place' });
+          continue;
+        }
+        if (placeId) seenPlaceIds.add(placeId);
 
         // Buscar en BD: primero por placeId exacto, luego por geo/slug
         let existingActivity = placeId
