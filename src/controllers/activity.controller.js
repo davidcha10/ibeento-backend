@@ -2351,7 +2351,7 @@ exports.previewSocialActivities = async (req, res) => {
     }
 
     const previewResults = selectBestSocialImportPreviewResults(resolvedCandidates, {
-      hasExplicitList: labels.some((item) => isExplicitSocialImportListSource(item?.source)),
+      hasMultiPlaceSignal: hasMultiPlaceSignalFromAiLabels(labels),
       limit: payload?.limit,
     });
     const needsMediaAnalysis = socialImportNeedsMediaAnalysis(labels, resolvedCandidates, unresolved);
@@ -4537,22 +4537,15 @@ function isHighPrioritySocialImportMediaSource(source = '') {
 }
 
 function shouldResolveSocialImportLabel(item = {}, labels = []) {
-  const hasExplicitList = Array.isArray(labels) && labels.some((entry) => (
-    isExplicitSocialImportListSource(entry?.source)
-  ));
-  if (!hasExplicitList) return true;
-  return isExplicitSocialImportListSource(item?.source) ||
-    isHighPrioritySocialImportMediaSource(item?.source);
+  void item;
+  void labels;
+  return true;
 }
 
 function prioritizeSocialImportLabels(labels = []) {
   return (Array.isArray(labels) ? labels : [])
     .map((item, index) => ({ item, index }))
     .sort((a, b) => {
-      const explicitDiff = Number(isExplicitSocialImportListSource(b.item?.source)) -
-        Number(isExplicitSocialImportListSource(a.item?.source));
-      if (explicitDiff) return explicitDiff;
-
       const sourceDiff = getSocialImportSignalSourceWeight(b.item?.source) -
         getSocialImportSignalSourceWeight(a.item?.source);
       if (sourceDiff) return sourceDiff;
@@ -4736,20 +4729,13 @@ function selectBestSocialImportPreviewResults(rows = [], options = {}) {
       Number(row?._socialImport?.resolveScore || 0) >= 0.72
     ));
 
-  const explicitListRows = filtered.filter((row) => (
-    isExplicitSocialImportListSource(row?._socialImport?.signalSource)
-  ));
-  if (options?.hasExplicitList && explicitListRows.length) {
-    filtered = explicitListRows;
-  }
-
-  const maxResults = options?.hasExplicitList
+  const maxResults = options?.hasMultiPlaceSignal
     ? Math.min(25, Math.max(1, Number(options?.limit || 20)))
-    : 1;
+    : Math.min(10, Math.max(1, Number(options?.limit || 5)));
 
   return filtered
     .sort((a, b) => {
-      if (options?.hasExplicitList) {
+      if (options?.hasMultiPlaceSignal) {
         const aSequence = Number(a?._socialImport?.sequence);
         const bSequence = Number(b?._socialImport?.sequence);
         const aHasSequence = Number.isFinite(aSequence);
@@ -4765,6 +4751,23 @@ function selectBestSocialImportPreviewResults(rows = [], options = {}) {
       return Number(b?.ranking?.priority || 0) - Number(a?.ranking?.priority || 0);
     })
     .slice(0, maxResults);
+}
+
+function hasMultiPlaceSignalFromAiLabels(labels = []) {
+  const rows = Array.isArray(labels) ? labels : [];
+  if (!rows.length) return false;
+
+  const exactOrPrimary = rows.filter((row) => (
+    String(row?.type || '').trim().toLowerCase() === 'exact_place' ||
+    String(row?.source || '').trim().toLowerCase() === 'ai_primary'
+  ));
+
+  const confident = exactOrPrimary.filter((row) => {
+    const c = String(row?.confidence || '').trim().toLowerCase();
+    return c === 'high' || c === 'medium';
+  });
+
+  return confident.length >= 2;
 }
 
 function socialImportNameTokenOverlapScore(left = '', right = '') {
@@ -5030,302 +5033,6 @@ function normalizeSocialImportContext(value = '') {
     .slice(0, 240);
 }
 
-function stripSocialMetadataPrefix(line = '') {
-  const raw = String(line || '').trim();
-  if (!raw) return '';
-
-  if (/^(?:twitter:title|og:title|title)\s*:/i.test(raw)) {
-    const quoteIndex = raw.indexOf('"');
-    if (quoteIndex >= 0) return raw.slice(quoteIndex + 1).trim();
-    return '';
-  }
-
-  if (/^(?:description|og:description)\s*:/i.test(raw)) {
-    const quoteIndex = raw.indexOf('"');
-    if (quoteIndex >= 0) return raw.slice(quoteIndex + 1).trim();
-    return raw.replace(/^(?:description|og:description)\s*:/i, '').trim();
-  }
-
-  return raw.replace(/^(?:keywords)\s*:/i, 'keywords:').trim();
-}
-
-function isSocialImportInstructionLine(value = '') {
-  const normalized = normalizeComparableText(value);
-  if (!normalized) return true;
-  return /^(?:save|follow|like|comment|share|subscribe|watch|full trip|link in bio|dm|tag)\b/i.test(normalized) ||
-    normalized.includes(' follow for ') ||
-    normalized.includes(' link in bio') ||
-    normalized.includes(' next trip');
-}
-
-function stripLeadingSocialImportMarker(value = '') {
-  return String(value || '')
-    .replace(/^\s*(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)+\s*/u, '')
-    .trim();
-}
-
-function extractSocialImportKeyValuePlace(value = '') {
-  const raw = stripLeadingSocialImportMarker(value);
-  const match = raw.match(/^(?:store\s+name|shop\s+name|restaurant\s+name|place\s+name|business\s+name|name|店名|店舗名)\s*[:：]\s*(.+)$/iu);
-  if (!match?.[1]) return null;
-  const label = normalizeSocialImportLabel(match[1]);
-  return label ? { label, context: '' } : null;
-}
-
-function stripSocialImportProductDescriptor(value = '') {
-  return String(value || '')
-    .replace(/\s*(?:「[^」]+」|『[^』]+』|"[^"]+"|'[^']+'|“[^”]+”)\s*$/u, '')
-    .trim();
-}
-
-function stripSocialImportNameWrapper(value = '') {
-  return String(value || '')
-    .trim()
-    .replace(/^[\[\【\(\（]+/, '')
-    .replace(/[\]\】\)\）]+$/, '')
-    .trim();
-}
-
-function isLikelySocialImportAreaPrefix(value = '') {
-  const normalized = normalizeComparableText(value);
-  return !!normalized && SOCIAL_IMPORT_LOCATION_TERMS.has(normalized);
-}
-
-function isSocialImportOperationalDetail(value = '') {
-  const raw = String(value || '').trim();
-  const normalized = normalizeComparableText(raw);
-  if (!normalized) return true;
-
-  return normalized === 'info' ||
-    normalized.includes('not a business') ||
-    normalized.includes('not a place') ||
-    normalized.includes('not specifically') ||
-    normalized.startsWith('speak about ') ||
-    normalized.startsWith('speaks about ') ||
-    normalized.startsWith('talk about ') ||
-    normalized.startsWith('talks about ') ||
-    /\b(?:weekday|weekdays|weekend|weekends|closed|holiday|holidays|hours?|open|opening|walk|walking|minute|min|from)\b/i.test(normalized) ||
-    /\b\d+\s*(?:min|minute|minutes|m|km)\b/i.test(normalized) ||
-    /\b\d{1,2}:\d{2}\b/.test(raw);
-}
-
-function isSocialImportProductOrDescription(value = '') {
-  const raw = String(value || '').trim();
-  const normalized = normalizeComparableText(raw);
-  if (!normalized) return true;
-
-  if (/[¥$€£]\s*\d|\b\d[\d,.]*\s*(?:yen|円|usd|eur|gbp)\b/i.test(raw)) return true;
-  if (/[!?。！？]/u.test(raw)) return true;
-
-  const tokens = normalized.split(' ').filter(Boolean);
-  if (tokens.length >= 3) {
-    const productHits = tokens.filter((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token)).length;
-    if (productHits >= 2 && !/\b(?:outer market|marketplace|market hall|food hall)\b/i.test(normalized)) return true;
-  }
-
-  return /\b(?:secret|refreshing|crispy|packed|rich|ingredient|combo|miracle|perfect|ultimate)\b/i.test(normalized);
-}
-
-function isLikelySocialImportBusinessName(value = '') {
-  const raw = stripSocialImportNameWrapper(value);
-  const label = normalizeSocialImportLabel(raw);
-  if (!label || isSocialImportInstructionLine(label)) return false;
-  if (isSocialImportOperationalDetail(label) || isSocialImportProductOrDescription(label)) return false;
-
-  const comparable = normalizeComparableText(label);
-  const tokens = comparable.split(' ').filter(Boolean);
-  if (!tokens.length || tokens.length > 6) return false;
-  if (tokens.every((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token) || SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return false;
-
-  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(label)) return true;
-  if (/[A-Z0-9]/.test(label)) return true;
-  if (tokens.length <= 3 && tokens.some((token) => !SOCIAL_IMPORT_GENERIC_TERMS.has(token) && !SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return true;
-  return false;
-}
-
-function normalizeExplicitSocialImportPlaceBody(value = '') {
-  let body = stripSocialImportProductDescriptor(stripLeadingSocialImportMarker(value));
-  if (!body || isSocialImportInstructionLine(body)) return null;
-
-  const keyValue = extractSocialImportKeyValuePlace(body);
-  if (keyValue?.label) return keyValue;
-
-  let inlineContext = '';
-  const inlineParts = body.split(/\s+(?:-|–|—|@|📍)\s*/u).map((part) => part.trim()).filter(Boolean);
-  if (inlineParts.length > 1) {
-    body = inlineParts[0];
-    inlineContext = inlineParts.slice(1).join(' ');
-  }
-
-  const tokens = body.split(/\s+/).filter(Boolean);
-  if (tokens.length >= 2 && isLikelySocialImportAreaPrefix(tokens[0])) {
-    return {
-      label: normalizeSocialImportLabel(tokens.slice(1).join(' ')),
-      context: normalizeSocialImportContext([tokens[0], inlineContext].filter(Boolean).join(' ')),
-    };
-  }
-
-  body = stripSocialImportNameWrapper(body);
-  return {
-    label: normalizeSocialImportLabel(body.replace(/^["']+|["']+$/g, '')),
-    context: normalizeSocialImportContext(inlineContext),
-  };
-}
-
-function extractSocialImportListItem(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const match = raw.match(
-    /^\s*(?:(?:\d{1,2}[.)]|[０-９]{1,2}[.)．、]|[①-⑳]|[➀-➉]|[•*-])\s*|(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s+)(.+)$/u
-  );
-  if (!match?.[1]) return null;
-
-  const parsed = normalizeExplicitSocialImportPlaceBody(match[1]);
-  if (parsed?.label && !isLikelySocialImportBusinessName(parsed.label)) return null;
-  return parsed?.label ? parsed : null;
-}
-
-function extractSocialImportNamedPlaceLine(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const parsed = extractSocialImportKeyValuePlace(raw);
-  return parsed?.label ? parsed : null;
-}
-
-function extractSocialImportPinContext(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const match = raw.match(/(?:📍|location\s*:|place\s*:|\bat\s+)(.+)$/i);
-  if (!match?.[1]) return '';
-  return normalizeSocialImportContext(match[1]);
-}
-
-function extractSocialImportAddressContext(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const match = raw.match(/^(?:address|住所|所在地)\s*[:：]\s*(.+)$/iu);
-  if (!match?.[1]) return '';
-  return normalizeSocialImportContext(match[1]);
-}
-
-function isSocialImportAddressLikeLine(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const normalized = normalizeComparableText(raw);
-  if (!normalized) return false;
-  if (isSocialImportOperationalDetail(raw)) return false;
-  return /〒|\b\d{1,5}(?:[-\s]\d{1,5})?\b/.test(raw) &&
-    /\b(?:japan|tokyo|gifu|city|cho|gun|prefecture|chome|kamakura|kanagawa)\b|東京|岐阜|鎌倉|住所|〒/iu.test(raw);
-}
-
-function nextSocialImportAddressContext(lines = [], startIndex = 0) {
-  for (let i = startIndex + 1; i < Math.min(lines.length, startIndex + 3); i += 1) {
-    const line = stripSocialMetadataPrefix(lines[i] || '');
-    const addressContext = extractSocialImportAddressContext(line);
-    if (addressContext) return addressContext;
-    if (isSocialImportAddressLikeLine(line)) return normalizeSocialImportContext(line);
-  }
-  return '';
-}
-
-function isStandaloneSocialImportNameLine(line = '') {
-  const raw = stripSocialMetadataPrefix(line);
-  const label = normalizeSocialImportLabel(raw);
-  if (!label || isSocialImportInstructionLine(label) || isSocialImportAddressLikeLine(label)) return false;
-  if (label.length > 40 || /[。！？!?]/u.test(raw)) return false;
-  if (/[:：#@]/u.test(raw)) return false;
-  const comparable = normalizeComparableText(label);
-  const tokens = comparable.split(' ').filter(Boolean);
-  if (!tokens.length || tokens.length > 5) return false;
-  if (tokens.every((token) => SOCIAL_IMPORT_GENERIC_TERMS.has(token) || SOCIAL_IMPORT_LOCATION_TERMS.has(token))) return false;
-  return /^[A-ZÁÉÍÓÚÑ0-9][\p{L}\p{N}'’.\-\s]+$/u.test(label) || /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(label);
-}
-
-function extractSocialImportGlobalContext(lines = []) {
-  const text = String((Array.isArray(lines) ? lines : []).join('\n') || '');
-  const contexts = [];
-  const add = (value) => {
-    const cleaned = normalizeSocialImportContext(value);
-    if (cleaned && !contexts.includes(cleaned)) contexts.push(cleaned);
-  };
-
-  for (const line of Array.isArray(lines) ? lines : []) {
-    const address = extractSocialImportAddressContext(line);
-    if (address) add(address);
-  }
-
-  const hints = [
-    { pattern: /\bshibuya\b|渋谷/iu, label: 'Shibuya Tokyo' },
-    { pattern: /\btsukiji\b|築地/iu, label: 'Tsukiji Tokyo' },
-    { pattern: /\bsangenjaya\b|三軒茶屋/iu, label: 'Sangenjaya Tokyo' },
-    { pattern: /\basakusa\b|浅草/iu, label: 'Asakusa Tokyo' },
-    { pattern: /\baoyama\b|青山/iu, label: 'Aoyama Tokyo' },
-    { pattern: /\bikebukuro\b|池袋/iu, label: 'Ikebukuro Tokyo' },
-    { pattern: /\bginza\b|銀座/iu, label: 'Ginza Tokyo' },
-    { pattern: /\bkamakura\b|鎌倉/iu, label: 'Kamakura Japan' },
-    { pattern: /\bgifu\b|岐阜/iu, label: 'Gifu Japan' },
-    { pattern: /\btarui\b|垂井/iu, label: 'Tarui Gifu Japan' },
-    { pattern: /\btokyo\b|東京/iu, label: 'Tokyo Japan' },
-    { pattern: /\bjapan\b/iu, label: 'Japan' },
-  ];
-
-  for (const hint of hints) {
-    if (hint.pattern.test(text)) add(hint.label);
-    if (contexts.length >= 8) break;
-  }
-
-  return contexts.join(' ');
-}
-
-function nextSocialImportListContext(lines = [], startIndex = 0) {
-  const contexts = [];
-  for (let i = startIndex + 1; i < Math.min(lines.length, startIndex + 4); i += 1) {
-    const line = stripSocialMetadataPrefix(lines[i] || '');
-    if (!line) continue;
-    if (extractSocialImportListItem(line)) break;
-
-    const addressContext = extractSocialImportAddressContext(line);
-    if (addressContext) {
-      contexts.push(addressContext);
-      continue;
-    }
-    if (isSocialImportAddressLikeLine(line)) {
-      contexts.push(normalizeSocialImportContext(line));
-      continue;
-    }
-
-    const pinContext = extractSocialImportPinContext(line);
-    if (pinContext) {
-      contexts.push(pinContext);
-      continue;
-    }
-
-    if (isSocialImportOperationalDetail(line) || isSocialImportProductOrDescription(line)) {
-      continue;
-    }
-
-    const normalized = normalizeSocialImportLabel(line);
-    const comparable = normalizeComparableText(normalized);
-    if (
-      normalized &&
-      normalized.length <= 60 &&
-      comparable &&
-      comparable.split(' ').length <= 5 &&
-      !/[.!?]{1,}$/.test(line)
-    ) {
-      contexts.push(normalized);
-    }
-
-    if (contexts.length) break;
-  }
-
-  return Array.from(new Set(contexts)).join(' ');
-}
-
-function buildFocusedSocialImportContext(...parts) {
-  const normalized = parts
-    .map((part) => normalizeSocialImportContext(part || ''))
-    .filter(Boolean);
-  const focused = normalized.filter((_, index) => index < normalized.length - 1);
-  if (focused.length) return Array.from(new Set(focused)).join(' ');
-  return normalized[0] || '';
-}
-
 function extractSocialImportLabels(payload = {}) {
   const out = [];
   const seen = new Map();
@@ -5374,96 +5081,6 @@ function extractSocialImportLabels(payload = {}) {
       });
     }
   }
-
-  const addLabelsFromTextBlock = (rawText = '', defaultSource = 'text') => {
-    const text = String(rawText || '').trim();
-    if (!text) return;
-
-    const lines = text.split(/\r?\n/).map((entry) => stripSocialMetadataPrefix(entry)).filter(Boolean);
-    const globalContext = extractSocialImportGlobalContext(lines);
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      const listItem = extractSocialImportListItem(line);
-      if (listItem?.label) {
-        const nearbyContext = nextSocialImportListContext(lines, index);
-        add(listItem.label, 'list_item', {
-          context: buildFocusedSocialImportContext(listItem.context, nearbyContext, globalContext),
-          sequence: index,
-        });
-        continue;
-      }
-
-      const namedPlace = extractSocialImportNamedPlaceLine(line);
-      if (namedPlace?.label) {
-        const nearbyContext = nextSocialImportListContext(lines, index);
-        add(namedPlace.label, 'explicit_name', {
-          context: buildFocusedSocialImportContext(namedPlace.context, nearbyContext, globalContext),
-          sequence: index,
-        });
-        continue;
-      }
-
-      const nearbyAddress = nextSocialImportAddressContext(lines, index);
-      if (nearbyAddress && isStandaloneSocialImportNameLine(line)) {
-        add(line, 'explicit_name', {
-          context: [nearbyAddress, globalContext].filter(Boolean).join(' '),
-          sequence: index,
-        });
-        continue;
-      }
-
-      const pinContext = extractSocialImportPinContext(line);
-      if (pinContext) add(pinContext, 'pin');
-
-      if (/^keywords\s*:/i.test(line)) {
-        line
-          .replace(/^keywords\s*:/i, '')
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-          .forEach((entry) => add(entry, 'keyword'));
-        continue;
-      }
-
-      for (const part of line.split(/[|,;]+/).map((entry) => entry.trim()).filter(Boolean)) {
-        if (/^[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}$/u.test(part)) {
-          add(part, defaultSource, { context: globalContext });
-        }
-      }
-    }
-
-    const candidateText = lines.join('\n');
-    const hashtagMatches = candidateText.match(/#[\p{L}\p{N}_-]{3,}/gu) || [];
-    for (const tag of hashtagMatches) {
-      add(
-        tag
-          .replace(/^#/, '')
-          .replace(/[_-]+/g, ' ')
-          .replace(/([a-z])([A-Z])/g, '$1 $2'),
-        'hashtag'
-      );
-    }
-
-    const mentionMatches = candidateText.match(/@[\p{L}\p{N}_.-]{3,}/gu) || [];
-    for (const mention of mentionMatches) {
-      add(
-        mention
-          .replace(/^@/, '')
-          .replace(/[_.-]+/g, ' ')
-          .replace(/([a-z])([A-Z])/g, '$1 $2'),
-        'mention',
-        { handle: mention.replace(/^@/, '') }
-      );
-    }
-
-    const captionMatches = candidateText.match(/\b[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}'’.-]+){0,4}\b/gu) || [];
-    for (const match of captionMatches) add(match, 'caption');
-  };
-
-  addLabelsFromTextBlock(payload?.visibleText || payload?.ocrText || payload?.imageText, 'visible_text');
-  addLabelsFromTextBlock(payload?.videoOcrText, 'video_ocr');
-  addLabelsFromTextBlock(payload?.audioTranscript || payload?.transcript, 'audio_transcript');
-  addLabelsFromTextBlock(payload?.text, 'text');
 
   return out.slice(0, 24);
 }
