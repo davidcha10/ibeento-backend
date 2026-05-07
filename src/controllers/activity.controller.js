@@ -2274,101 +2274,112 @@ exports.previewSocialActivities = async (req, res) => {
     const unresolved = [];
     const orderedLabels = prioritizeSocialImportLabels(labels);
     const maxCandidates = Math.min(orderedLabels.length, Math.max(1, Math.min(25, Number(payload?.limit || 20))));
+    const candidateSlice = orderedLabels.slice(0, maxCandidates);
+    const concurrency = Math.min(6, Math.max(2, Number(payload?.concurrency || 4)));
+    let pointer = 0;
 
-    for (const item of orderedLabels.slice(0, maxCandidates)) {
-      const query = String(item?.label || '').trim();
-      if (!query) continue;
-      try {
-        if (!shouldResolveSocialImportLabel(item, labels)) {
-          unresolved.push({ label: query, reason: 'superseded_by_explicit_list' });
-          continue;
-        }
+    const worker = async () => {
+      while (pointer < candidateSlice.length) {
+        const index = pointer;
+        pointer += 1;
+        const item = candidateSlice[index];
+        const query = String(item?.label || '').trim();
+        if (!query) continue;
 
-        if (isSocialImportAuthorNoiseLabel(item, text)) {
-          unresolved.push({ label: query, reason: 'author_profile_ignored' });
-          continue;
-        }
+        try {
+          if (!shouldResolveSocialImportLabel(item, labels)) {
+            unresolved.push({ label: query, reason: 'superseded_by_explicit_list' });
+            continue;
+          }
 
-        if (isWeakSocialImportDiscoveryLabel(item)) {
-          unresolved.push({ label: query, reason: 'weak_discovery_signal_needs_media_analysis' });
-          continue;
-        }
+          if (isSocialImportAuthorNoiseLabel(item, text)) {
+            unresolved.push({ label: query, reason: 'author_profile_ignored' });
+            continue;
+          }
 
-        if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
-          unresolved.push({ label: query, reason: 'context_only' });
-          continue;
-        }
+          if (isWeakSocialImportDiscoveryLabel(item)) {
+            unresolved.push({ label: query, reason: 'weak_discovery_signal_needs_media_analysis' });
+            continue;
+          }
 
-        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext, aiLocationContext);
-        const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
-          textQuery: searchQuery,
-          maxResultCount: 10,
-        });
-        const match = pickBestGoogleCachePlace(
-          cachePlaces,
-          query,
-          locationContext?.name || text,
-          { ...item, aiLocationContext }
-        );
-        if (!match?.place) {
-          unresolved.push({ label: query, reason: 'no_google_place_match' });
-          continue;
-        }
-        const selected = match.place;
-        const confidence = match.confidence;
-        const googleCache = buildGoogleCachePayload(selected);
-        let existingActivity = await Activity.findOne({ 'googleCache.placeId': googleCache.placeId }).lean();
-        if (!existingActivity) {
-          existingActivity = await findExistingActivityForGoogleCache(googleCache, query, location);
-        }
-        if (existingActivity?._id) {
-          existingActivity = await Activity.findById(existingActivity._id).lean() || existingActivity;
-        }
-        const sourceClaim = buildGoogleCacheSocialSourceClaim({
-          label: query,
-          profile: item.profile,
-          googleCache: selected,
-          confidence,
-          evidence: [text, item?.context].filter(Boolean).join('\n'),
-        }, {
-          source,
-          url,
-          text,
-        });
-        resolvedCandidates.push({
-          ...(existingActivity || {
-            name: selected.name || query,
-            nameSource: 'google_cache',
-            visibility: 'imported_private',
-            type: inferActivityTypeFromGoogleTypes(selected.types),
-            ranking: {
-              ratingAvg: 0,
-              reviewsCount: 0,
-              priority: calculatePriorityFromGoogleCache(selected),
-              prioritySource: 'google_cache_user_trend',
-              priorityFormulaVersion: 'google-cache-v1',
-            },
-            sourceClaims: [sourceClaim],
-          }),
-          googleCache: existingActivity?.googleCache?.placeId ? existingActivity.googleCache : googleCache,
-          media: existingActivity?.media || buildSocialImportPreviewMedia(selected, req),
-          _socialImport: {
-            existing: !!existingActivity?._id,
-            existingActivityId: existingActivity?._id ? String(existingActivity._id) : undefined,
+          if (await isSocialImportContextOnlyLabel(query, location, labels.length)) {
+            unresolved.push({ label: query, reason: 'context_only' });
+            continue;
+          }
+
+          const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext, aiLocationContext);
+          const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
+            textQuery: searchQuery,
+            maxResultCount: 10,
+          });
+          const match = pickBestGoogleCachePlace(
+            cachePlaces,
+            query,
+            locationContext?.name || text,
+            { ...item, aiLocationContext }
+          );
+          if (!match?.place) {
+            unresolved.push({ label: query, reason: 'no_google_place_match' });
+            continue;
+          }
+          const selected = match.place;
+          const confidence = match.confidence;
+          const googleCache = buildGoogleCachePayload(selected);
+          let existingActivity = await Activity.findOne({ 'googleCache.placeId': googleCache.placeId }).lean();
+          if (!existingActivity) {
+            existingActivity = await findExistingActivityForGoogleCache(googleCache, query, location);
+          }
+          if (existingActivity?._id) {
+            existingActivity = await Activity.findById(existingActivity._id).lean() || existingActivity;
+          }
+          const sourceClaim = buildGoogleCacheSocialSourceClaim({
+            label: query,
+            profile: item.profile,
+            googleCache: selected,
             confidence,
-            resolveScore: match.resolveScore,
-            signalSource: item?.source || 'candidate',
-            signalQuality: match.signalQuality,
-            context: item?.context || undefined,
-            sequence: Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : undefined,
-            originalLabel: query,
-            previewOnly: true,
-          },
-        });
-      } catch (err) {
-        unresolved.push({ label: query, reason: err?.message || 'search_failed' });
+            evidence: [text, item?.context].filter(Boolean).join('\n'),
+          }, {
+            source,
+            url,
+            text,
+          });
+          resolvedCandidates.push({
+            ...(existingActivity || {
+              name: selected.name || query,
+              nameSource: 'google_cache',
+              visibility: 'imported_private',
+              type: inferActivityTypeFromGoogleTypes(selected.types),
+              ranking: {
+                ratingAvg: 0,
+                reviewsCount: 0,
+                priority: calculatePriorityFromGoogleCache(selected),
+                prioritySource: 'google_cache_user_trend',
+                priorityFormulaVersion: 'google-cache-v1',
+              },
+              sourceClaims: [sourceClaim],
+            }),
+            googleCache: existingActivity?.googleCache?.placeId ? existingActivity.googleCache : googleCache,
+            media: existingActivity?.media || buildSocialImportPreviewMedia(selected, req),
+            _socialImport: {
+              existing: !!existingActivity?._id,
+              existingActivityId: existingActivity?._id ? String(existingActivity._id) : undefined,
+              confidence,
+              resolveScore: match.resolveScore,
+              signalSource: item?.source || 'candidate',
+              signalQuality: match.signalQuality,
+              context: item?.context || undefined,
+              sequence: Number.isFinite(Number(item?.sequence)) ? Number(item.sequence) : undefined,
+              originalLabel: query,
+              previewOnly: true,
+            },
+          });
+        } catch (err) {
+          unresolved.push({ label: query, reason: err?.message || 'search_failed' });
+        }
       }
-    }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
     const previewResults = selectBestSocialImportPreviewResults(resolvedCandidates, {
       hasMultiPlaceSignal: hasMultiPlaceSignalFromAiLabels(labels),
