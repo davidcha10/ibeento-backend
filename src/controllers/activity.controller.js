@@ -1766,6 +1766,7 @@ exports.importSocialActivities = async (req, res) => {
     // 3. Extracción con Gemini (texto primero → imagen fallback)
     let labels = [];
     let extractionMethod = 'none';
+    let aiLocationContext = null;
     try {
       const primaryGeminiResult = await geminiService.extractPlacesFromSocialContent({
         text: aiInput.primaryText,
@@ -1786,6 +1787,10 @@ exports.importSocialActivities = async (req, res) => {
       }
 
       labels = normalizeGeminiPlaceCandidates(geminiResult?.places);
+      const locationResult = await geminiService.extractLocationContextFromSocialContent({
+        text: geminiResult?.places?.length ? aiInput.primaryText : aiInput.fallbackAudioText,
+      });
+      aiLocationContext = locationResult?.location || null;
     } catch (err) {
       console.warn('[social-import] Gemini extraction failed', err?.message);
     }
@@ -1817,12 +1822,17 @@ exports.importSocialActivities = async (req, res) => {
         continue;
       }
       try {
-        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
+        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext, aiLocationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
           maxResultCount: 10,
         });
-        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || aiInput.primaryText, item);
+        const match = pickBestGoogleCachePlace(
+          cachePlaces,
+          query,
+          locationContext?.name || aiInput.primaryText,
+          { ...item, aiLocationContext }
+        );
         if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
@@ -2182,6 +2192,7 @@ exports.previewSocialActivities = async (req, res) => {
     const aiInput = buildSocialImportAiExtractionInput(payload, text);
     let labels = [];
     let extractionMethod = 'none';
+    let aiLocationContext = null;
     try {
       const primaryGeminiResult = await geminiService.extractPlacesFromSocialContent({
         text: aiInput.primaryText,
@@ -2202,6 +2213,10 @@ exports.previewSocialActivities = async (req, res) => {
       }
 
       labels = normalizeGeminiPlaceCandidates(geminiResult?.places);
+      const locationResult = await geminiService.extractLocationContextFromSocialContent({
+        text: geminiResult?.places?.length ? aiInput.primaryText : aiInput.fallbackAudioText,
+      });
+      aiLocationContext = locationResult?.location || null;
     } catch (err) {
       console.warn('[social-import] Gemini extraction failed in preview', err?.message);
     }
@@ -2284,12 +2299,17 @@ exports.previewSocialActivities = async (req, res) => {
           continue;
         }
 
-        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext);
+        const searchQuery = buildSocialImportGoogleSearchQuery(query, item, locationContext, aiLocationContext);
         const cachePlaces = await googlePlacesService.searchTextForPlaceCache({
           textQuery: searchQuery,
           maxResultCount: 10,
         });
-        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || text, item);
+        const match = pickBestGoogleCachePlace(
+          cachePlaces,
+          query,
+          locationContext?.name || text,
+          { ...item, aiLocationContext }
+        );
         if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
@@ -4131,6 +4151,9 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
     if (contextTokens.some((token) => formattedAddress.includes(token))) score += 0.12;
   }
 
+  const geoBias = scoreSocialImportAiGeoBias(signal?.aiLocationContext, formattedAddress);
+  score += geoBias;
+
   const addressNumberKeys = extractSocialImportAddressNumberKeys([context, signal?.context].filter(Boolean).join(' '));
   if (addressNumberKeys.length && formattedAddress) {
     if (socialImportAddressNumberMatches(place?.formattedAddress || '', addressNumberKeys)) {
@@ -4154,6 +4177,36 @@ function scoreGoogleCachePlaceMatch(place = {}, label = '', context = '', signal
   score += signalQuality;
 
   return Math.max(0, Math.min(0.98, Number(score.toFixed(2))));
+}
+
+function buildAiLocationTerms(aiLocationContext = null) {
+  if (!aiLocationContext || typeof aiLocationContext !== 'object') return '';
+  return [
+    String(aiLocationContext.country || '').trim(),
+    String(aiLocationContext.city || '').trim(),
+    ...(Array.isArray(aiLocationContext.areas) ? aiLocationContext.areas.map((value) => String(value || '').trim()) : []),
+  ].filter(Boolean).join(' ');
+}
+
+function scoreSocialImportAiGeoBias(aiLocationContext = null, formattedAddress = '') {
+  if (!aiLocationContext || typeof aiLocationContext !== 'object') return 0;
+  const expectedTerms = [
+    String(aiLocationContext.country || '').trim(),
+    String(aiLocationContext.city || '').trim(),
+    ...(Array.isArray(aiLocationContext.areas) ? aiLocationContext.areas.map((value) => String(value || '').trim()) : []),
+  ]
+    .map((term) => normalizeComparableText(term))
+    .filter((term) => term.length >= 3);
+
+  if (!expectedTerms.length) return 0;
+
+  const address = normalizeComparableText(formattedAddress);
+  if (!address) return 0;
+
+  const hits = expectedTerms.filter((term) => address.includes(term)).length;
+  if (hits >= 2) return 0.24;
+  if (hits === 1) return 0.1;
+  return -0.2;
 }
 
 function pickBestGoogleCachePlace(places = [], label = '', context = '', signal = {}) {
@@ -4558,8 +4611,9 @@ function prioritizeSocialImportLabels(labels = []) {
     .map((entry) => entry.item);
 }
 
-function buildSocialImportGoogleSearchQuery(label = '', item = {}, locationContext = null) {
+function buildSocialImportGoogleSearchQuery(label = '', item = {}, locationContext = null, aiLocationContext = null) {
   const expandedLabel = expandCompactSocialImportSearchLabel(label);
+  const aiLocationTerms = buildAiLocationTerms(aiLocationContext);
   return [
     label,
     expandedLabel && expandedLabel !== label ? expandedLabel : '',
@@ -4567,6 +4621,7 @@ function buildSocialImportGoogleSearchQuery(label = '', item = {}, locationConte
     item?.profile?.displayName || '',
     item?.profile?.category || '',
     locationContext?.name || '',
+    aiLocationTerms,
   ].filter(Boolean).join(' ').slice(0, 240);
 }
 

@@ -7,6 +7,7 @@ const adminZonesController = require('../controllers/admin-zones.controller');
 const adminActivitySyncController = require('../controllers/admin-activity-sync.controller');
 const adminZoneSyncController = require('../controllers/admin-zone-sync.controller');
 const adminCompliancePacksController = require('../controllers/admin-compliance-packs.controller');
+const adminSocialImportLinksController = require('../controllers/admin-social-import-links.controller');
 const onboardingTrackingController = require('../controllers/onboarding-tracking.controller');
 
 const router = Router();
@@ -46,5 +47,6 @@ router.get('/compliance-packs/:id', adminCompliancePacksController.getById);
 router.post('/compliance-packs', adminCompliancePacksController.create);
 router.put('/compliance-packs/:id', adminCompliancePacksController.updateById);
 router.delete('/compliance-packs/:id', adminCompliancePacksController.deleteById);
+router.get('/social-import-links', adminSocialImportLinksController.list);
 
 module.exports = router;

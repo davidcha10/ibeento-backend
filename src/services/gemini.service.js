@@ -3,6 +3,7 @@ const AI_LOG_PREFIX = '[AI][gemini]';
 
 const EXTRACTION_MODEL_ID = 'gemini-2.5-flash';
 const EXTRACTION_FALLBACK_MODEL_IDS = ['gemini-2.0-flash'];
+const LOCATION_CONTEXT_MODEL_ID = 'gemini-2.5-flash';
 
 const PLACE_EXTRACTION_SYSTEM = `
 You are a place name extractor for a travel app.
@@ -157,6 +158,66 @@ async function extractPlacesFromSocialContent({ text = '', imageBase64 = null, m
 
   console.warn(`${AI_LOG_PREFIX} extraction:all-failed`, { hasText, hasImage });
   return { places: [], method: 'failed' };
+}
+
+async function extractLocationContextFromSocialContent({ text = '' } = {}) {
+  const cleanText = String(text || '').trim();
+  if (!cleanText) {
+    return { location: null, method: 'none' };
+  }
+
+  const systemInstruction = `
+You extract ONLY geographic context from social media content for place resolution.
+
+Return ONLY valid JSON:
+{
+  "location": {
+    "country": "<country or empty>",
+    "city": "<city or empty>",
+    "areas": ["<area1>", "<area2>"],
+    "confidence": "high"|"medium"|"low",
+    "evidence": "<short quote>"
+  }
+}
+
+Rules:
+- Use only places explicitly or strongly implied in the text.
+- If unknown, set empty strings/empty array.
+- Keep evidence <= 120 chars.
+`.trim();
+
+  const parts = [{ text: `Extract geographic context from this post content:\n\n${cleanText.slice(0, 12000)}` }];
+  const out = await generateWithModelParts(LOCATION_CONTEXT_MODEL_ID, systemInstruction, parts, 1);
+  if (!out.ok || !out.data || typeof out.data !== 'object') {
+    return { location: null, method: 'failed' };
+  }
+  const raw = out.data.location;
+  if (!raw || typeof raw !== 'object') {
+    return { location: null, method: 'empty' };
+  }
+
+  const country = String(raw.country || '').trim();
+  const city = String(raw.city || '').trim();
+  const areas = Array.isArray(raw.areas)
+    ? raw.areas.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 5)
+    : [];
+  const confidence = String(raw.confidence || '').trim().toLowerCase();
+  const evidence = String(raw.evidence || '').trim();
+
+  if (!country && !city && !areas.length) {
+    return { location: null, method: 'empty' };
+  }
+
+  return {
+    location: {
+      country,
+      city,
+      areas,
+      confidence: ['high', 'medium', 'low'].includes(confidence) ? confidence : 'low',
+      evidence: evidence.slice(0, 120),
+    },
+    method: 'text',
+  };
 }
 
 /**
@@ -550,5 +611,6 @@ async function selectPrimaryPlaceWithAI(text = '', candidates = []) {
 module.exports = {
   generateItineraryResponse,
   extractPlacesFromSocialContent,
+  extractLocationContextFromSocialContent,
   selectPrimaryPlaceWithAI,
 };
