@@ -18,6 +18,7 @@ router.get('/analytics/funnel', adminAnalyticsController.funnel);
 router.get('/analytics/revenue', adminAnalyticsController.revenueInsights);
 router.get('/analytics/screens', adminAnalyticsController.screenDropoff);
 router.get('/analytics/users', adminAnalyticsController.usersInsights);
+router.get('/analytics/content', adminAnalyticsController.contentInsights);
 router.get('/analytics/onboarding-funnel', onboardingTrackingController.getAdminFunnel);
 
 router.get('/taxonomy/zone-types', adminTaxonomyController.list);

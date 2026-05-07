@@ -62,7 +62,7 @@ function normalizeLocalizedSlugs(rawSlugs = {}, namesObj = {}, fallbackSlug = ''
 
 const activitySchema = new Schema({
 
-    name: { type: String, required: true, trim: true },
+    name: { type: String, trim: true },
     nameSource: {
       type: String,
       enum: ['manual', 'source_claim', 'ai', 'open_data', 'google_cache'],
@@ -325,6 +325,8 @@ const activitySchema = new Schema({
       reviewsCount: { type: Number },
       businessStatus: { type: String, trim: true },
       types: [{ type: String, trim: true }],
+      photoUrl: { type: String, trim: true },
+      coverUrl: { type: String, trim: true },
       googleMapsUri: { type: String, trim: true },
       openingHours: Schema.Types.Mixed,
       timeZone: { type: String, trim: true },
@@ -362,6 +364,13 @@ activitySchema.pre('validate', function (next) {
   const derivedName = currentName || String(namesSeed.en || firstLocaleValue(namesSeed) || '').trim();
   if (derivedName) this.name = derivedName;
 
+  const googleCacheName = String(this.googleCache?.name || '').trim();
+
+  // Require at least one of name or googleCache.name
+  if (!derivedName && !googleCacheName) {
+    return next(new Error('Activity must have a name or googleCache.name'));
+  }
+
   const normalizedNames = normalizeLocalizedNames(namesSeed, derivedName);
   this.names = normalizedNames;
 
@@ -369,7 +378,8 @@ activitySchema.pre('validate', function (next) {
   const derivedSlug =
     currentSlug ||
     String(slugsSeed.en || firstLocaleValue(slugsSeed) || '').trim() ||
-    slugify(derivedName);
+    slugify(derivedName) ||
+    slugify(googleCacheName);
   if (derivedSlug) this.slug = derivedSlug;
 
   const normalizedSlugs = normalizeLocalizedSlugs(slugsSeed, normalizedNames, derivedSlug);
@@ -387,8 +397,9 @@ activitySchema.pre('validate', function (next) {
     coords.length === 2 &&
     Number.isFinite(Number(coords[0])) &&
     Number.isFinite(Number(coords[1]));
+  // Accept googleCache.geo as valid geo regardless of visibility
+  // (social imports get geo from Google Places, not from zone resolution)
   const validGoogleCache =
-    (visibility === 'imported_private' || visibility === 'admin_review') &&
     cacheType === 'Point' &&
     Array.isArray(cacheCoords) &&
     cacheCoords.length === 2 &&
@@ -399,6 +410,16 @@ activitySchema.pre('validate', function (next) {
     return next(new Error('location.geo (Point with [lng, lat]) is required'));
   }
   return next();
+});
+
+// Computed display fields: use googleCache as fallback when name/media not yet curated
+activitySchema.set('toJSON', {
+  virtuals: true,
+  transform(doc, ret) {
+    ret.displayName = ret.name || ret.googleCache?.name || '';
+    ret.displayPhoto = ret.media?.cover || ret.media?.images?.[0]?.url || ret.googleCache?.photoUrl || null;
+    return ret;
+  },
 });
 
 activitySchema.pre('findOneAndUpdate', function normalizeUpdate(next) {

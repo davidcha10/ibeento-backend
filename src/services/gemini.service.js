@@ -27,14 +27,31 @@ What to ignore:
 Special rule for @mentions: if a mention clearly refers to a physical venue (restaurant, hotel, bar, cafe, attraction), extract it as a place name — remove the @ and convert the handle to a readable name (e.g. "@ramenlongseason" → "Ramen Long Season", "@noburestaurant" → "Nobu Restaurant"). If the mention refers to a person or it's ambiguous, ignore it.
 
 Output ONLY valid JSON with no extra text:
-{"places":[{"name":"<exact place name as mentioned>","confidence":"high"|"medium"|"low"}]}
+{
+  "places": [
+    {
+      "name": "<exact place name as mentioned>",
+      "confidence": "high"|"medium"|"low",
+      "type": "exact_place"|"area_mentioned"|"context_only",
+      "evidence": "<short quote or cue from text>",
+      "isPrimary": true|false
+    }
+  ]
+}
+
+Rules for fields:
+- Prefer "exact_place" when the text clearly indicates a venue/business.
+- Use "area_mentioned" for cities/neighborhoods or broad areas.
+- Use "context_only" for weak mentions that should not be used as direct venue candidates.
+- Keep "evidence" short (<= 120 chars).
+- Mark isPrimary=true only for the strongest candidate in the content.
 
 Confidence levels:
 - high: specific named venue or attraction ("Sagrada Família", "Nobu Restaurant", "Central Park")
 - medium: area, neighborhood, or city ("El Born", "Barcelona", "Tuscany")
 - low: inferred from context, not explicitly named
 
-Max 10 places. If none found, return: {"places":[]}
+Max 15 places. If none found, return: {"places":[]}
 `.trim();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;

@@ -77,6 +77,9 @@ function buildGoogleCachePayload(place = {}, options = {}) {
   const placeId = String(place?.placeId || '').trim();
   if (!placeId) return null;
 
+  const firstPhoto = Array.isArray(place?.photos) ? place.photos[0] : null;
+  const photoUrl = String(place?.photoUrl || firstPhoto?.url || '').trim() || undefined;
+
   return {
     placeId,
     status: 'active',
@@ -90,6 +93,7 @@ function buildGoogleCachePayload(place = {}, options = {}) {
     reviewsCount: Number.isFinite(Number(place?.reviewsCount)) ? Number(place.reviewsCount) : undefined,
     businessStatus: String(place?.businessStatus || '').trim() || undefined,
     types: Array.isArray(place?.types) ? place.types.map((type) => String(type || '').trim()).filter(Boolean) : [],
+    photoUrl,
     googleMapsUri: String(place?.googleMapsUri || '').trim() || undefined,
     openingHours: place?.openingHours || undefined,
     timeZone: String(place?.timeZone || '').trim() || undefined,

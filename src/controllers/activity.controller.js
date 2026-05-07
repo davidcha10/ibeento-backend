@@ -1735,7 +1735,6 @@ exports.importSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
     const url = String(payload?.url || '').trim();
-    const rawText = String(payload?.text || '').trim();
     const imageBase64 = String(payload?.imageBase64 || '').trim() || null;
     const imageMimeType = String(payload?.imageMimeType || 'image/jpeg').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
@@ -1762,35 +1761,33 @@ exports.importSocialActivities = async (req, res) => {
 
     // 2. Enriquecer texto con metadata del URL (caption de Instagram, etc.)
     const fetchedText = await buildSocialImportResolverText(payload, { source, url });
-    const fullText = [rawText, fetchedText].filter(Boolean).join('\n').trim();
+    const aiInput = buildSocialImportAiExtractionInput(payload, fetchedText);
 
     // 3. Extracción con Gemini (texto primero → imagen fallback)
     let labels = [];
     let extractionMethod = 'none';
     try {
-      const geminiResult = await geminiService.extractPlacesFromSocialContent({
-        text: fullText,
+      const primaryGeminiResult = await geminiService.extractPlacesFromSocialContent({
+        text: aiInput.primaryText,
         imageBase64: imageBase64 || null,
         mimeType: imageMimeType,
       });
-      if (geminiResult.places.length > 0) {
-        extractionMethod = `ai_${geminiResult.method}`;
-        labels = geminiResult.places
-          .map((p) => ({ label: normalizeSocialImportLabel(p.name), source: 'ai', confidence: p.confidence }))
-          .filter((item) => item.label);
-      }
-    } catch (err) {
-      console.warn('[social-import] Gemini extraction failed, falling back to regex', err?.message);
-    }
 
-    // Fallback a regex
-    if (!labels.length) {
-      let regexLabels = extractSocialImportLabels({ ...payload, text: fullText });
-      if (regexLabels.length) {
-        regexLabels = await enrichSocialImportMentionLabels(regexLabels, { source, url, text: fullText });
+      let geminiResult = primaryGeminiResult;
+      if (!geminiResult?.places?.length && aiInput.audioText) {
+        geminiResult = await geminiService.extractPlacesFromSocialContent({
+          text: aiInput.fallbackAudioText,
+          imageBase64: imageBase64 || null,
+          mimeType: imageMimeType,
+        });
+        extractionMethod = `ai_${geminiResult.method}_audio_fallback`;
+      } else {
+        extractionMethod = `ai_${geminiResult?.method || 'none'}`;
       }
-      labels = regexLabels;
-      extractionMethod = 'regex';
+
+      labels = normalizeGeminiPlaceCandidates(geminiResult?.places);
+    } catch (err) {
+      console.warn('[social-import] Gemini extraction failed', err?.message);
     }
 
     if (!labels.length) {
@@ -1825,7 +1822,7 @@ exports.importSocialActivities = async (req, res) => {
           textQuery: searchQuery,
           maxResultCount: 10,
         });
-        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || rawText, item);
+        const match = pickBestGoogleCachePlace(cachePlaces, query, locationContext?.name || aiInput.primaryText, item);
         if (!match?.place) {
           unresolved.push({ label: query, reason: 'no_google_place_match' });
           continue;
@@ -1947,7 +1944,7 @@ exports.saveSocialImportFavorites = async (req, res) => {
     const savedActivityIds = [];
     const failedPlaces = [];
 
-    for (const place of places) {
+    for (const [placeIndex, place] of places.entries()) {
       try {
         // Si ya tiene _id está en BD, solo necesitamos el ID
         let activityId = normalizeObjectIdString(
@@ -1977,26 +1974,35 @@ exports.saveSocialImportFavorites = async (req, res) => {
               continue;
             }
 
-            const slug = await ensureUniqueActivitySlug(slugify(label));
             const priority = calculatePriorityFromGoogleCache(builtGoogleCache);
 
+            // Propagate geo from Google to location so geo validation passes
+            const locObj = { ...baseLocObj };
+            if (builtGoogleCache?.geo && !locObj?.geo?.coordinates?.length) {
+              locObj.geo = builtGoogleCache.geo;
+              locObj.geoSource = 'google_cache';
+              if (builtGoogleCache.formattedAddress && !locObj.address) {
+                locObj.address = builtGoogleCache.formattedAddress;
+                locObj.addressSource = 'google_cache';
+              }
+            }
+
             try {
+              if (placeIndex === 0) {
+                const coverUrl = String(place?.media?.coverUrl || '').trim() || undefined;
+                if (coverUrl) builtGoogleCache.coverUrl = coverUrl;
+              }
+
               doc = await Activity.create({
-                name: label,
-                nameSource: 'source_claim',
-                slug,
-                description: '',
-                type: place.type || inferActivityTypeFromGoogleTypes(builtGoogleCache.types),
+                // name, slug, description, type left blank — admin fills manually
+                // slug stays empty (sparse unique index allows multiple null plugs)
                 active: true,
-                visibility: 'imported_private',
-                location: baseLocObj,
+                location: locObj,
                 media: { images: [] },
                 ranking: {
                   ratingAvg: 0,
                   reviewsCount: 0,
                   priority,
-                  prioritySource: 'google_cache_user_trend',
-                  priorityFormulaVersion: 'google-cache-v1',
                 },
                 audit: {
                   isAudited: false,
@@ -2067,17 +2073,138 @@ exports.saveSocialImportFavorites = async (req, res) => {
   }
 };
 
+/**
+ * Runs the googleCache maintenance pass:
+ * - Not audited + cache expired → refresh from Google
+ * - Audited + cache expired     → wipe all cache fields but keep placeId
+ *
+ * Called by a scheduled job (e.g. every 24 h) or manually from admin.
+ */
+exports.runGoogleCacheMaintenance = async (req, res) => {
+  try {
+    const now = new Date();
+    const limit = Math.min(Number(req?.query?.limit) || 100, 500);
+
+    const expiredActivities = await Activity.find({
+      'googleCache.placeId': { $type: 'string' },
+      'googleCache.expiresAt': { $lte: now },
+      'googleCache.status': { $ne: 'refresh_failed' },
+    })
+      .select('_id googleCache.placeId googleCache.refreshCount audit.isAudited audit.status')
+      .lean()
+      .limit(limit);
+
+    let refreshed = 0;
+    let purged = 0;
+    let failed = 0;
+
+    for (const activity of expiredActivities) {
+      const placeId = activity?.googleCache?.placeId;
+      if (!placeId) continue;
+
+      if (activity?.audit?.isAudited) {
+        // Audited — wipe cache fields but preserve placeId for future dedup
+        await Activity.updateOne(
+          { _id: activity._id },
+          {
+            $set: { 'googleCache.status': 'expired', 'googleCache.placeId': placeId },
+            $unset: {
+              'googleCache.name': '',
+              'googleCache.formattedAddress': '',
+              'googleCache.geo': '',
+              'googleCache.ratingAvg': '',
+              'googleCache.reviewsCount': '',
+              'googleCache.businessStatus': '',
+              'googleCache.types': '',
+              'googleCache.photoUrl': '',
+              'googleCache.googleMapsUri': '',
+              'googleCache.openingHours': '',
+              'googleCache.timeZone': '',
+              'googleCache.fieldMask': '',
+              'googleCache.fetchedAt': '',
+              'googleCache.expiresAt': '',
+              'googleCache.lastError': '',
+            },
+          }
+        );
+        purged++;
+      } else {
+        // Not audited — refresh from Google
+        try {
+          const refreshed_cache = await refreshGoogleCacheByPlaceId(
+            placeId,
+            { refreshCount: activity?.googleCache?.refreshCount || 0 }
+          );
+          if (refreshed_cache) {
+            await Activity.updateOne(
+              { _id: activity._id },
+              { $set: { googleCache: refreshed_cache } }
+            );
+            refreshed++;
+          } else {
+            await Activity.updateOne(
+              { _id: activity._id },
+              { $set: { 'googleCache.status': 'refresh_failed', 'googleCache.lastError': 'place_not_found' } }
+            );
+            failed++;
+          }
+        } catch (err) {
+          await Activity.updateOne(
+            { _id: activity._id },
+            { $set: { 'googleCache.status': 'refresh_failed', 'googleCache.lastError': String(err?.message || '').slice(0, 200) } }
+          );
+          failed++;
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      total: expiredActivities.length,
+      refreshed,
+      purged,
+      failed,
+    });
+  } catch (err) {
+    console.error('[googleCache maintenance]', err?.message);
+    return res.status(500).json({ success: false, message: err?.message });
+  }
+};
+
 exports.previewSocialActivities = async (req, res) => {
   try {
     const payload = req.body || {};
     const url = String(payload?.url || '').trim();
     const source = normalizeSocialImportSource(payload?.source, url);
+    const imageBase64 = String(payload?.imageBase64 || '').trim() || null;
+    const imageMimeType = String(payload?.imageMimeType || 'image/jpeg').trim();
     const text = await buildSocialImportResolverText(payload, { source, url });
-    let labels = extractSocialImportLabels({
-      ...payload,
-      text,
-    });
-    labels = await enrichSocialImportMentionLabels(labels, { source, url, text });
+    const aiInput = buildSocialImportAiExtractionInput(payload, text);
+    let labels = [];
+    let extractionMethod = 'none';
+    try {
+      const primaryGeminiResult = await geminiService.extractPlacesFromSocialContent({
+        text: aiInput.primaryText,
+        imageBase64,
+        mimeType: imageMimeType,
+      });
+
+      let geminiResult = primaryGeminiResult;
+      if (!geminiResult?.places?.length && aiInput.audioText) {
+        geminiResult = await geminiService.extractPlacesFromSocialContent({
+          text: aiInput.fallbackAudioText,
+          imageBase64,
+          mimeType: imageMimeType,
+        });
+        extractionMethod = `ai_${geminiResult.method}_audio_fallback`;
+      } else {
+        extractionMethod = `ai_${geminiResult?.method || 'none'}`;
+      }
+
+      labels = normalizeGeminiPlaceCandidates(geminiResult?.places);
+    } catch (err) {
+      console.warn('[social-import] Gemini extraction failed in preview', err?.message);
+    }
     const normalizedUrl = normalizeSocialImportUrl(url) || buildSyntheticSocialImportUrl(source, text, labels);
     const postId = extractSocialPostId(normalizedUrl || url);
     const bypassCache = payload?.bypassCache === true || payload?.refresh === true;
@@ -2116,7 +2243,8 @@ exports.previewSocialActivities = async (req, res) => {
     if (!labels.length) {
       return res.status(400).json({
         success: false,
-        message: 'No place candidates were provided.',
+        message: 'No place candidates were found in the shared content.',
+        meta: { extractionMethod },
       });
     }
 
@@ -2238,6 +2366,7 @@ exports.previewSocialActivities = async (req, res) => {
         mediaAnalysisSources: needsMediaAnalysis ? ['audio_transcript', 'video_ocr', 'thumbnail_vision'] : [],
         location,
         source,
+        extractionMethod,
         receivedCandidates: labels.length,
         resolvedCount: previewResults.length,
         candidateMatchesCount: resolvedCandidates.length,
@@ -2252,6 +2381,94 @@ exports.previewSocialActivities = async (req, res) => {
     });
   }
 };
+
+function buildSocialImportAiExtractionInput(payload = {}, metadataText = '') {
+  const normalizedMetadata = String(metadataText || '').trim();
+  const description = String(
+    payload?.description ||
+    payload?.caption ||
+    payload?.text ||
+    ''
+  ).trim();
+  const title = String(
+    payload?.title ||
+    payload?.postTitle ||
+    payload?.ogTitle ||
+    ''
+  ).trim();
+  const explicitMetadata = typeof payload?.metadata === 'string'
+    ? payload.metadata
+    : (payload?.metadata && typeof payload.metadata === 'object')
+      ? JSON.stringify(payload.metadata)
+      : '';
+  const audio = String(
+    payload?.audioTranscript ||
+    payload?.transcript ||
+    payload?.audioText ||
+    ''
+  ).trim();
+
+  const primarySections = [
+    description ? `Description:\n${description}` : '',
+    title ? `Title:\n${title}` : '',
+    normalizedMetadata ? `Metadata:\n${normalizedMetadata}` : '',
+    explicitMetadata ? `Metadata (explicit):\n${explicitMetadata}` : '',
+  ].filter(Boolean);
+
+  const primaryText = primarySections.join('\n\n').slice(0, 12000);
+  const fallbackAudioText = [
+    primaryText,
+    audio ? `Audio transcript:\n${audio}` : '',
+  ].filter(Boolean).join('\n\n').slice(0, 12000);
+
+  return {
+    primaryText,
+    audioText: audio,
+    fallbackAudioText,
+  };
+}
+
+function socialImportGeminiConfidenceToScore(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'high') return 0.9;
+  if (normalized === 'medium') return 0.65;
+  return 0.35;
+}
+
+function normalizeGeminiPlaceCandidates(places = []) {
+  const rows = Array.isArray(places) ? places : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const label = normalizeSocialImportLabel(raw.name || raw.label || '');
+    if (!label) continue;
+
+    const confidence = String(raw.confidence || '').trim().toLowerCase();
+    const confidenceScore = socialImportGeminiConfidenceToScore(confidence);
+    const type = String(raw.type || '').trim().toLowerCase();
+    const isPrimary = raw.isPrimary === true;
+
+    if (type === 'context_only') continue;
+    if (type === 'area_mentioned' && !isPrimary) continue;
+    if (confidenceScore < 0.55 && !isPrimary) continue;
+
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    out.push({
+      label,
+      source: isPrimary ? 'ai_primary' : 'ai',
+      confidence: confidence || 'low',
+      context: normalizeSocialImportContext(raw.evidence || raw.context || ''),
+      type: type || 'exact_place',
+    });
+  }
+
+  return out.slice(0, 25);
+}
 
 async function resolveCachedSocialImportActivities(linkDoc = null) {
   const refs = Array.isArray(linkDoc?.resolvedActivities)
@@ -5309,7 +5526,16 @@ async function resolveSocialImportLocation(payload = {}) {
     }
   }
 
-  const labels = extractSocialImportLabels(payload);
+  const labels = Array.isArray(payload?.candidates)
+    ? payload.candidates
+        .map((candidate) => {
+          if (!candidate || typeof candidate !== 'object') return null;
+          const label = normalizeSocialImportLabel(candidate.label || candidate.name || '');
+          if (!label) return null;
+          return { label };
+        })
+        .filter(Boolean)
+    : [];
   const matches = [];
   for (const item of labels) {
     const zone = await findBestZoneForSocialImportTerm(item.label);

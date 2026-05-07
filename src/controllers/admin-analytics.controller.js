@@ -3,6 +3,8 @@ const Itinerary = require('../models/Itinerary');
 const AnalyticsEvent = require('../models/AnalyticsEvent');
 const BillingTransaction = require('../models/BillingTransaction');
 const UserSubscription = require('../models/UserSubscription');
+const Activity = require('../models/Activity');
+const Zone = require('../models/Zone');
 
 const FUNNEL_STEPS = [
   'landing_viewed',
@@ -787,6 +789,76 @@ exports.usersInsights = async (req, res, next) => {
         traffic: {
           totalLandingViewsWindow,
           timeline: trafficTimeline,
+        },
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.contentInsights = async (req, res, next) => {
+  try {
+    const days = parseDays(req.query.days, 30);
+    const fromDay = startOfUtcDay(rangeStart(days));
+    const todayUtc = startOfUtcDay(new Date());
+
+    const [
+      totalActivities,
+      totalZones,
+      dailyActivities,
+      dailyZones,
+      activitiesBeforeWindow,
+      zonesBeforeWindow,
+    ] = await Promise.all([
+      Activity.countDocuments({}),
+      Zone.countDocuments({}),
+      Activity.aggregate([
+        { $match: { createdAt: { $gte: fromDay } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      Zone.aggregate([
+        { $match: { createdAt: { $gte: fromDay } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      Activity.countDocuments({ createdAt: { $lt: fromDay } }),
+      Zone.countDocuments({ createdAt: { $lt: fromDay } }),
+    ]);
+
+    const activitiesMap = new Map(dailyActivities.map((r) => [r._id, r.count]));
+    const zonesMap = new Map(dailyZones.map((r) => [r._id, r.count]));
+
+    const activitiesTimeline = [];
+    const zonesTimeline = [];
+    let cumulativeActivities = activitiesBeforeWindow;
+    let cumulativeZones = zonesBeforeWindow;
+
+    for (let cursor = new Date(fromDay); cursor <= todayUtc; cursor = new Date(cursor.getTime() + 86_400_000)) {
+      const key = cursor.toISOString().slice(0, 10);
+      const newActivities = Number(activitiesMap.get(key) || 0);
+      const newZones = Number(zonesMap.get(key) || 0);
+      cumulativeActivities += newActivities;
+      cumulativeZones += newZones;
+      activitiesTimeline.push({ date: key, newActivities, totalActivities: cumulativeActivities });
+      zonesTimeline.push({ date: key, newZones, totalZones: cumulativeZones });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        windowDays: days,
+        from: fromDay.toISOString().slice(0, 10),
+        activities: {
+          total: totalActivities,
+          newInWindow: dailyActivities.reduce((s, r) => s + r.count, 0),
+          timeline: activitiesTimeline,
+        },
+        zones: {
+          total: totalZones,
+          newInWindow: dailyZones.reduce((s, r) => s + r.count, 0),
+          timeline: zonesTimeline,
         },
       },
     });
