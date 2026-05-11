@@ -8,6 +8,7 @@ router.get('/me-subscription', auth, billingController.getMySubscription);
 router.get('/trial-eligibility', auth, billingController.getTrialEligibility);
 router.post('/stripe/checkout-session', auth, billingController.createCheckoutSession);
 router.post('/stripe/customer-portal', auth, billingController.createCustomerPortalSession);
+router.post('/apple/sync', auth, billingController.syncAppleSubscription);
 router.post('/stripe/webhook', billingController.handleStripeWebhook);
 
 module.exports = router;

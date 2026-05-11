@@ -1,6 +1,6 @@
 const { generateItineraryResponse } = require('../services/gemini.service');
+const ActivityCategory = require('../models/ActivityCategory');
 const AI_LOG_PREFIX = '[AI][controller]';
-const AI_SELECTED_ACTIVITIES_PER_DAY_CAP = Number(process.env.AI_SELECTED_ACTIVITIES_PER_DAY_CAP || 10);
 const AI_SELECTED_ACTIVITIES_CAP_MAX = Number(process.env.AI_SELECTED_ACTIVITIES_CAP_MAX || 200);
 const AI_EXECUTION_ENABLED = String(process.env.AI_EXECUTION_ENABLED || 'true').toLowerCase() === 'true';
 const AI_MIN_ACTIVITIES_PER_DAY = Number(process.env.AI_MIN_ACTIVITIES_PER_DAY || 2);
@@ -278,13 +278,44 @@ function actionTouchesSelectedDay(action = {}, targetDayYmd, selectedItemIds = n
   return !!day && day === targetDayYmd;
 }
 
-function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
-  const WEIGHTS = {
-    favorite: 0.35,
-    priority: 0.30,
-    rating: 0.25,
-    categoryMatch: 0.10,
+// Haversine distance in km between two {lat, lng} points
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const sin2 = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(sin2));
+}
+
+// Proximity score: decay = 1 / (1 + distKm / 5). Neutral 0.5 when no geo.
+function computeProximityScore(activityGeo, referencePoint) {
+  if (!activityGeo || !referencePoint) return 0.5;
+  const distKm = haversineKm(activityGeo, referencePoint);
+  return 1 / (1 + distKm / 5);
+}
+
+// Centroid of a list of {lat, lng} points. Returns null if empty.
+function geoCentroid(points) {
+  const valid = points.filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!valid.length) return null;
+  return {
+    lat: valid.reduce((s, p) => s + p.lat, 0) / valid.length,
+    lng: valid.reduce((s, p) => s + p.lng, 0) / valid.length,
   };
+}
+
+function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
+  const favoriteWeightLevel = options?.favoriteWeight ?? 'medium';
+  const WEIGHTS = favoriteWeightLevel === 'high'
+    ? { favorite: 0.40, quality: 0.25, categoryAffinity: 0.15, proximity: 0.20 }
+    : favoriteWeightLevel === 'low'
+      ? { favorite: 0.10, quality: 0.35, categoryAffinity: 0.25, proximity: 0.30 }
+      : { favorite: 0.30, quality: 0.30, categoryAffinity: 0.15, proximity: 0.25 };
+  const preferredCategoryIds = options?.preferredCategoryIds instanceof Set
+    ? options.preferredCategoryIds
+    : new Set();
+  const keepExistingActivities = options?.keepExistingActivities !== false;
   const scope = options?.generationScope?.scope === 'selected_day' ? 'selected_day' : 'whole_trip';
   const targetDayYmd = scope === 'selected_day'
     ? String(options?.generationScope?.targetDayYmd || '').trim()
@@ -319,61 +350,75 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
     .filter(Boolean)
     .filter((id, idx, arr) => arr.indexOf(id) === idx);
 
-  const placeTypeSet = new Set(
-    (Array.isArray(aiInput?.tripContext?.visitPlaces) ? aiInput.tripContext.visitPlaces : [])
-      .map((p) => String(p?.type || '').trim().toLowerCase())
-      .filter(Boolean)
-  );
+  // Reference point for proximity: centroid of itinerary geo, fallback to visitPlaces centroid
+  const itineraryGeoPoints = itineraryItems
+    .map((it) => it?.geo)
+    .filter((g) => g && Number.isFinite(g.lat) && Number.isFinite(g.lng));
+  const visitPlaceGeoPoints = (Array.isArray(aiInput?.tripContext?.visitPlaces) ? aiInput.tripContext.visitPlaces : [])
+    .map((p) => p?.geo)
+    .filter((g) => g && Number.isFinite(g?.lat) && Number.isFinite(g?.lng));
+  const proximityReference = geoCentroid(itineraryGeoPoints) ?? geoCentroid(visitPlaceGeoPoints) ?? null;
+
+  // Max reviewsCount across pool for popularity normalization
+  const maxReviewsCount = Math.max(1, ...allActivities.map((a) => Number(a?.ranking?.reviewsCount || 0)));
 
   const normalized = allActivities.map((a) => {
     const id = String(a?._id || '').trim();
     const priorityRaw = toNumberOrNull(a?.ranking?.priority) ?? 0;
     const ratingRaw = toNumberOrNull(a?.ranking?.ratingAvg) ?? 0;
+    const reviewsCount = Math.max(0, Number(a?.ranking?.reviewsCount || 0));
     const categoryIds = [
       String(a?.activityCategoryId || '').trim(),
-      ...(Array.isArray(a?.activityCategoryIds) ? a.activityCategoryIds.map((x) => String(x || '').trim()) : []),
+      ...(Array.isArray(a?.categoryIds) ? a.categoryIds.map((x) => String(x || '').trim())
+        : Array.isArray(a?.activityCategoryIds) ? a.activityCategoryIds.map((x) => String(x || '').trim()) : []),
     ].filter(Boolean);
-    const categoryMatchRaw = categoryIds.length
-      ? Math.max(...categoryIds.map((cid) => Number(topCategoryWeights.get(cid) || 0)))
-      : 0;
     const inItinerary = itineraryActivityIds.has(id);
     const isFavorite = favoriteIds.has(id);
 
+    // ── favorite ─────────────────────────────────────────────────────────
     const favoriteScore = isFavorite ? 1 : 0;
-    const priorityScore = clamp(priorityRaw, 0, 100) / 100;
-    const ratingScore = clamp(ratingRaw, 0, 5) / 5;
-    const categoryMatchScore = clamp(categoryMatchRaw, 0, 1);
+
+    // ── quality: priority + rating + popularity blended by review volume ──
+    const priorityScore    = clamp(priorityRaw, 0, 100) / 100;
+    const ratingScore      = clamp(ratingRaw, 0, 5) / 5;
+    const popularityScore  = Math.log(1 + reviewsCount) / Math.log(1 + maxReviewsCount);
+    // t grows from 0→0.8 as reviews accumulate; priority always keeps ≥20% influence
+    const t = clamp(reviewsCount / (reviewsCount + 100), 0, 0.8);
+    const organicScore     = ratingScore * 0.6 + popularityScore * 0.4;
+    const qualityScore     = priorityScore * (1 - t) + organicScore * t;
+
+    // ── categoryAffinity: implicit (from favorites) + explicit (onboarding) ──
+    const categoryMatchRaw = categoryIds.length
+      ? Math.max(...categoryIds.map((cid) => Number(topCategoryWeights.get(cid) || 0)))
+      : 0;
+    const explicitMatch = preferredCategoryIds.size > 0 && categoryIds.some((cid) => preferredCategoryIds.has(cid)) ? 1 : 0;
+    const categoryAffinityScore = clamp(categoryMatchRaw + explicitMatch * 0.5, 0, 1);
+
+    // ── proximity ────────────────────────────────────────────────────────
+    const activityGeo = a?.geo && Number.isFinite(a.geo.lat) && Number.isFinite(a.geo.lng) ? a.geo : null;
+    const proximityScore = computeProximityScore(activityGeo, proximityReference);
 
     const weightedScore =
-      (favoriteScore * WEIGHTS.favorite) +
-      (priorityScore * WEIGHTS.priority) +
-      (ratingScore * WEIGHTS.rating) +
-      (categoryMatchScore * WEIGHTS.categoryMatch);
-
-    const location = a?.location && typeof a.location === 'object' ? a.location : {};
-    const scopedLocation = {};
-    if (placeTypeSet.has('city') && location.cityId) scopedLocation.cityId = location.cityId;
-    if (placeTypeSet.has('region') && location.regionId) scopedLocation.regionId = location.regionId;
-    if (placeTypeSet.has('country') && location.countryId) scopedLocation.countryId = location.countryId;
-    if (!Object.keys(scopedLocation).length) {
-      if (location.cityId) scopedLocation.cityId = location.cityId;
-      else if (location.regionId) scopedLocation.regionId = location.regionId;
-      else if (location.countryId) scopedLocation.countryId = location.countryId;
-    }
+      (favoriteScore         * WEIGHTS.favorite) +
+      (qualityScore          * WEIGHTS.quality) +
+      (categoryAffinityScore * WEIGHTS.categoryAffinity) +
+      (proximityScore        * WEIGHTS.proximity);
 
     return {
       ...a,
       _id: id,
-      location: scopedLocation,
       __score: Number((weightedScore * 100).toFixed(2)),
       __isFavorite: isFavorite,
       __inItinerary: inItinerary,
       __favoriteScore: favoriteScore,
+      __qualityScore: qualityScore,
+      __categoryAffinityScore: categoryAffinityScore,
+      __proximityScore: proximityScore,
       __priorityScore: priorityScore,
       __ratingScore: ratingScore,
-      __categoryMatchScore: categoryMatchScore,
-      __priorityRaw: priorityRaw,
-      __ratingRaw: ratingRaw,
+      __popularityScore: popularityScore,
+      __reviewsCount: reviewsCount,
+      __t: t,
     };
   });
 
@@ -383,9 +428,8 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
 
-  const perDayCap = Number.isFinite(AI_SELECTED_ACTIVITIES_PER_DAY_CAP) && AI_SELECTED_ACTIVITIES_PER_DAY_CAP > 0
-    ? Math.floor(AI_SELECTED_ACTIVITIES_PER_DAY_CAP)
-    : 10;
+  const pace = Number(aiInput?.userContext?.preferences?.pace || 5);
+  const perDayCap = pace >= 7 ? 6 : 5;
   const dynamicCap = Math.max(perDayCap, generatedDayCount * perDayCap);
   const capMax = Number.isFinite(AI_SELECTED_ACTIVITIES_CAP_MAX) && AI_SELECTED_ACTIVITIES_CAP_MAX > 0
     ? Math.floor(AI_SELECTED_ACTIVITIES_CAP_MAX)
@@ -398,9 +442,11 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
       .filter(([id]) => !!id)
   );
 
-  const forcedItems = itineraryActivityIdsOrdered
-    .map((activityId) => normalizedById.get(activityId))
-    .filter(Boolean);
+  const forcedItems = keepExistingActivities
+    ? itineraryActivityIdsOrdered
+        .map((activityId) => normalizedById.get(activityId))
+        .filter(Boolean)
+    : [];
   const forcedIds = new Set(forcedItems.map((a) => String(a?._id || '').trim()));
 
   const effectiveCap = Math.max(cap, forcedItems.length);
@@ -415,11 +461,14 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
       __isFavorite,
       __inItinerary,
       __favoriteScore,
+      __qualityScore,
+      __categoryAffinityScore,
+      __proximityScore,
       __priorityScore,
       __ratingScore,
-      __categoryMatchScore,
-      __priorityRaw,
-      __ratingRaw,
+      __popularityScore,
+      __reviewsCount,
+      __t,
       ...clean
     } = a;
     return clean;
@@ -428,12 +477,9 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
   return {
     selected,
     diagnostics: {
-      scoringWeights: {
-        favorite: WEIGHTS.favorite,
-        priority: WEIGHTS.priority,
-        rating: WEIGHTS.rating,
-        categoryMatch: WEIGHTS.categoryMatch,
-      },
+      scoringWeights: WEIGHTS,
+      proximityReferencePoint: proximityReference,
+      maxReviewsCount,
       totalActivities: normalized.length,
       selectedActivities: selected.length,
       cap,
@@ -453,22 +499,44 @@ function buildSelectedActivitiesForAi(aiInput = {}, options = {}) {
         score: a.__score,
         inItinerary: !!a.__inItinerary,
         components: {
-          favorite: Number(a.__favoriteScore || 0),
-          priority: Number(a.__priorityScore || 0),
-          rating: Number(a.__ratingScore || 0),
-          categoryMatch: Number(a.__categoryMatchScore || 0),
+          favorite:         Number(a.__favoriteScore || 0),
+          quality:          Number((a.__qualityScore || 0).toFixed(3)),
+          categoryAffinity: Number((a.__categoryAffinityScore || 0).toFixed(3)),
+          proximity:        Number((a.__proximityScore || 0).toFixed(3)),
         },
-        raw: {
-          priority: Number(a.__priorityRaw || 0),
-          rating: Number(a.__ratingRaw || 0),
+        qualityDetail: {
+          priority:   Number((a.__priorityScore || 0).toFixed(3)),
+          rating:     Number((a.__ratingScore || 0).toFixed(3)),
+          popularity: Number((a.__popularityScore || 0).toFixed(3)),
+          reviewsCount: a.__reviewsCount,
+          blendT:     Number((a.__t || 0).toFixed(3)),
         },
       })),
     },
   };
 }
 
-function buildAiInputForModel(aiInput = {}, generationScope = null) {
-  const { selected, diagnostics } = buildSelectedActivitiesForAi(aiInput, { generationScope });
+async function buildAiInputForModel(aiInput = {}, generationScope = null, options = {}) {
+  // Resolve category IDs for the user's preferred activity type groups
+  const favoriteActivityTypes = Array.isArray(aiInput?.userContext?.preferences?.favoriteActivityTypes)
+    ? aiInput.userContext.preferences.favoriteActivityTypes.filter(Boolean)
+    : [];
+  let preferredCategoryIds = new Set();
+  if (favoriteActivityTypes.length) {
+    try {
+      const cats = await ActivityCategory.find(
+        { group: { $in: favoriteActivityTypes }, isActive: true },
+        { _id: 1 }
+      ).lean();
+      cats.forEach((c) => preferredCategoryIds.add(String(c._id)));
+    } catch (err) {
+      console.warn(`${AI_LOG_PREFIX} failed to resolve preferred category IDs`, err?.message);
+    }
+  }
+
+  const keepExistingActivities = options?.keepExistingActivities !== false;
+  const favoriteWeight = options?.favoriteWeight ?? 'medium';
+  const { selected, diagnostics } = buildSelectedActivitiesForAi(aiInput, { generationScope, preferredCategoryIds, keepExistingActivities, favoriteWeight });
   const days = getDateRangeDays(aiInput?.tripContext?.startDate, aiInput?.tripContext?.endDate);
   const itineraryItems = Array.isArray(aiInput?.itinerary?.items) ? aiInput.itinerary.items : [];
   const avgDurationMinutes = computeAverageActivityDurationMinutes(selected, DEFAULT_ACTIVITY_DURATION_MIN);
@@ -483,15 +551,23 @@ function buildAiInputForModel(aiInput = {}, generationScope = null) {
     itineraryByDay[key] = (itineraryByDay[key] || 0) + 1;
   }
 
+  const occupiedHoursPerDay = Number(aiInput?.userContext?.preferences?.occupiedHoursPerDay) || null;
+
+  const userTimezone = String(aiInput?.userContext?.preferences?.userTimezone || '').trim() || 'UTC';
+
   const modelInput = {
     ...aiInput,
     activities: selected,
     planningRules: {
       objective: 'Generate a complete day-by-day itinerary with morning and afternoon coverage.',
-      sleepWindow: {
-        wakeUpTime: aiInput?.userContext?.preferences?.wakeUpTime || null,
-        sleepTime: aiInput?.userContext?.preferences?.sleepTime || null,
+      userTimezone,
+      activityWindow: {
+        start: aiInput?.userContext?.preferences?.activityWindowStart || null,
+        end: aiInput?.userContext?.preferences?.activityWindowEnd || null,
       },
+      occupiedHoursPerDay: Number.isFinite(occupiedHoursPerDay) && occupiedHoursPerDay > 0
+        ? occupiedHoursPerDay
+        : null,
       dayCoverage: {
         minActivitiesPerDay: paceTargets.minActivitiesPerDay,
         preferredActivitiesPerDay: paceTargets.preferredActivitiesPerDay,
@@ -954,8 +1030,8 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}, generationScope =
   const tripDays = (scope === 'selected_day' && targetDayYmd)
     ? [targetDayYmd]
     : tripDaysAll;
-  const prefWake = String(modelInput?.userContext?.preferences?.wakeUpTime || '').trim();
-  const prefSleep = String(modelInput?.userContext?.preferences?.sleepTime || '').trim();
+  const prefWake = String(modelInput?.userContext?.preferences?.activityWindowStart || '').trim();
+  const prefSleep = String(modelInput?.userContext?.preferences?.activityWindowEnd || '').trim();
   const windowSeedItems = (scope === 'selected_day' && targetDayYmd)
     ? tripItems.filter((it) => dayKeyFromIso(it?.timelineStartDate) === targetDayYmd)
     : tripItems;
@@ -1136,8 +1212,8 @@ function enforceAndRepairPlan(sanitized = {}, modelInput = {}, generationScope =
         scope,
         targetDayYmd: targetDayYmd || null,
         windowSource,
-        wakeTime: minutesToHHmm(wakeMin),
-        sleepTime: minutesToHHmm(sleepMin),
+        activityWindowStart: minutesToHHmm(wakeMin),
+        activityWindowEnd: minutesToHHmm(sleepMin),
         wakeMin,
         sleepMin,
         pace: paceTargets.pace,
@@ -1355,6 +1431,10 @@ exports.generateItinerary = async (req, res) => {
       typeof req.body.extraInstructions === 'string'
         ? req.body.extraInstructions
         : undefined;
+    const keepExistingActivities = req.body?.keepExistingActivities !== false; // default true
+    const favoriteWeight = ['low', 'medium', 'high'].includes(req.body?.favoriteWeight)
+      ? req.body.favoriteWeight
+      : 'medium';
     const generationScope = normalizeGenerationScope(req.body?.generationScope, aiInput);
 
     const reqSummary = {
@@ -1379,7 +1459,7 @@ exports.generateItinerary = async (req, res) => {
     };
     console.log(`${AI_LOG_PREFIX} incoming`, reqSummary);
 
-    const { modelInput, diagnostics } = buildAiInputForModel(aiInput, generationScope);
+    const { modelInput, diagnostics } = await buildAiInputForModel(aiInput, generationScope, { keepExistingActivities, favoriteWeight });
     console.log(`${AI_LOG_PREFIX} prepared-input`, diagnostics);
 
     if (!AI_EXECUTION_ENABLED) {

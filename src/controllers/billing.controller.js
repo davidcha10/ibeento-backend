@@ -32,6 +32,15 @@ function mapInterval(interval) {
   return 'unknown';
 }
 
+function inferApplePlanInterval(productId = '') {
+  const pid = String(productId || '').toLowerCase();
+  if (pid.includes('year') || pid.includes('annual')) return 'year';
+  if (pid.includes('month')) return 'month';
+  if (pid.includes('week')) return 'week';
+  if (pid.includes('day')) return 'day';
+  return 'unknown';
+}
+
 function centsToAmount(v) {
   const n = Number(v || 0);
   return Number.isFinite(n) ? n / 100 : 0;
@@ -244,6 +253,9 @@ exports.createCheckoutSession = async (req, res, next) => {
     if (!stripe) return res.status(503).json({ error: 'Stripe is not configured' });
 
     const plan = String(req.body?.plan || '').toLowerCase();
+    const entryPoint = String(req.body?.entryPoint || 'unknown').trim() || 'unknown';
+    const paywallId = String(req.body?.paywallId || 'main_pro_paywall').trim() || 'main_pro_paywall';
+    const abVariant = String(req.body?.abVariant || 'unknown').trim() || 'unknown';
     let planConfig = getPlanConfig(plan);
     if (!planConfig || !planConfig.priceId) {
       return res.status(400).json({ error: 'Invalid plan configuration' });
@@ -284,6 +296,9 @@ exports.createCheckoutSession = async (req, res, next) => {
       metadata: {
         userId: String(user._id),
         planId: planConfig.planId,
+        entryPoint,
+        paywallId,
+        abVariant,
       },
       ...(forceNoTrial ? { trial_end: 'now' } : {}),
     };
@@ -303,6 +318,9 @@ exports.createCheckoutSession = async (req, res, next) => {
       metadata: {
         userId: String(user._id),
         planId: planConfig.planId,
+        entryPoint,
+        paywallId,
+        abVariant,
       },
       subscription_data: subscriptionData,
       allow_promotion_codes: true,
@@ -316,6 +334,9 @@ exports.createCheckoutSession = async (req, res, next) => {
         plan_id: planConfig.planId,
         plan_name: planConfig.planName,
         checkout_session_id: session.id,
+        entry_point: entryPoint,
+        paywall_id: paywallId,
+        ab_variant: abVariant,
       },
     });
 
@@ -479,8 +500,9 @@ exports.handleStripeWebhook = async (req, res, next) => {
           userId,
           sessionId: undefined,
           metadata: {
-            paywall_id: 'main_pro_paywall',
+            paywall_id: String(data?.metadata?.paywallId || 'main_pro_paywall'),
             entry_point: String(data?.metadata?.entryPoint || 'unknown'),
+            ab_variant: String(data?.metadata?.abVariant || 'unknown'),
             checkout_session_id: String(data?.id || ''),
             stripe_subscription_id: subscriptionId || undefined,
           },
@@ -551,6 +573,126 @@ exports.handleStripeWebhook = async (req, res, next) => {
     }
 
     return res.json({ received: true });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.syncAppleSubscription = async (req, res, next) => {
+  try {
+    if (!req.user?._id) return res.status(401).json({ error: 'Unauthorized' });
+
+    const productId = String(req.body?.productId || '').trim();
+    const transactionId = String(req.body?.transactionId || '').trim();
+    const originalTransactionId = String(req.body?.originalTransactionId || '').trim();
+    const purchaseDate = req.body?.purchaseDate ? new Date(req.body.purchaseDate) : new Date();
+    const expiresDateRaw = req.body?.expiresDate ? new Date(req.body.expiresDate) : null;
+    const revocationDateRaw = req.body?.revocationDate ? new Date(req.body.revocationDate) : null;
+    const entryPoint = String(req.body?.entryPoint || 'unknown').trim() || 'unknown';
+    const paywallId = String(req.body?.paywallId || 'onboarding_paywall').trim() || 'onboarding_paywall';
+    const abVariant = String(req.body?.abVariant || 'unknown').trim() || 'unknown';
+
+    if (!productId || !transactionId) {
+      return res.status(400).json({ error: 'productId and transactionId are required' });
+    }
+
+    const now = new Date();
+    const hasRevocation = revocationDateRaw instanceof Date && !Number.isNaN(revocationDateRaw.getTime());
+    const hasExpiry = expiresDateRaw instanceof Date && !Number.isNaN(expiresDateRaw.getTime());
+    const isActive = !hasRevocation && (!hasExpiry || expiresDateRaw > now);
+    const status = isActive ? 'active' : 'expired';
+    const isPro = isActive;
+
+    await UserSubscription.findOneAndUpdate(
+      { userId: req.user._id },
+      {
+        $set: {
+          provider: 'apple',
+          providerSubscriptionId: originalTransactionId || transactionId,
+          status,
+          isPro,
+          autoRenew: isActive,
+          plan: {
+            planId: productId,
+            planName: 'Apple Subscription',
+            interval: inferApplePlanInterval(productId),
+            amount: 0,
+            currency: 'USD',
+          },
+          startedAt: purchaseDate,
+          currentPeriodStart: purchaseDate,
+          currentPeriodEnd: hasExpiry ? expiresDateRaw : undefined,
+          canceledAt: hasRevocation ? revocationDateRaw : undefined,
+          lastTransactionAt: now,
+          metadata: {
+            source: 'ios_storekit_client_sync',
+            transactionId,
+            originalTransactionId: originalTransactionId || '',
+          },
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    await User.findByIdAndUpdate(req.user._id, { $set: { isPro } });
+
+    await BillingTransaction.findOneAndUpdate(
+      { provider: 'apple', externalTransactionId: transactionId },
+      {
+        $setOnInsert: {
+          userId: req.user._id,
+          provider: 'apple',
+          externalTransactionId: transactionId,
+          eventType: 'purchase',
+          status: 'succeeded',
+          occurredAt: purchaseDate,
+          processedAt: now,
+          source: 'ios_iap_client',
+          providerSubscriptionId: originalTransactionId || transactionId,
+          plan: {
+            planId: productId,
+            planName: 'Apple Subscription',
+            interval: inferApplePlanInterval(productId),
+          },
+          amount: {
+            gross: 0,
+            fee: 0,
+            tax: 0,
+            net: 0,
+            currency: 'USD',
+          },
+          metadata: {
+            paywall_id: paywallId,
+            entry_point: entryPoint,
+            ab_variant: abVariant,
+          },
+          rawPayload: req.body || {},
+        },
+      },
+      { upsert: true }
+    );
+
+    await trackServerAnalyticsEvent({
+      event: 'purchase_success',
+      userId: req.user._id,
+      sessionId: undefined,
+      metadata: {
+        paywall_id: paywallId,
+        entry_point: entryPoint,
+        ab_variant: abVariant,
+        provider: 'apple',
+        product_id: productId,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      status,
+      isPro,
+      productId,
+      transactionId,
+      originalTransactionId: originalTransactionId || transactionId,
+    });
   } catch (err) {
     return next(err);
   }

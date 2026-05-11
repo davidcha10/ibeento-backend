@@ -223,7 +223,7 @@ Rules:
 /**
  * Devuelve una instancia de modelo de Gemini configurada.
  */
-function getModel(modelId = DEFAULT_MODEL_ID) {
+function getModel(modelId = DEFAULT_MODEL_ID, configOverrides = {}) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not set');
   }
@@ -240,6 +240,7 @@ function getModel(modelId = DEFAULT_MODEL_ID) {
       maxOutputTokens: 1500,
       // Intentamos forzar respuesta en JSON
       responseMimeType: 'application/json',
+      ...configOverrides,
     },
   });
 
@@ -361,9 +362,9 @@ function tryParseLenientJson(text = '') {
   return { ok: false, value: null, usedLenient: false };
 }
 
-async function generateWithModel(modelId, systemInstruction, userPrompt, attempt) {
+async function generateWithModel(modelId, systemInstruction, userPrompt, attempt, modelConfigOverrides = {}) {
   console.log(`${AI_LOG_PREFIX} attempt:start`, { modelId, attempt });
-  const model = getModel(modelId);
+  const model = getModel(modelId, modelConfigOverrides);
 
   let result;
   try {
@@ -474,14 +475,18 @@ Hard rules:
 - If you update/reorder an existing itinerary item for a slot, do not add another activity overlapping that same slot.
 - Use geo proximity when activities/itinerary items include geo (lng/lat); prefer nearby sequences.
 - Prioritize favorites.activityIds and favorites.topActivityCategoryIds (favorites > inertia).
+- Each activity has an optional "hours" field (e.g. "Mo-Fr 09:00-21:00, Sa-Su closed"). NEVER schedule an activity outside its open hours. If hours is absent, assume open all day.
 - Fill each trip day with 2-4 activities when candidates allow.
 - For EVERY day in trip range, include at least:
   - 1 morning activity (09:00-12:30)
   - 1 afternoon activity (14:00-19:30)
-- Keep all activities within active window; if wake/sleep missing, use existing itinerary pattern.
+- Keep all activities within the user's activity window (planningRules.activityWindow.start/end); if not set, use existing itinerary pattern.
+- CRITICAL: All timelineStartDate and timelineEndDate values MUST be in the user's LOCAL timezone (planningRules.userTimezone, e.g. "America/New_York"). Generate ISO 8601 strings with the correct UTC offset for that timezone (e.g. "2026-05-14T09:00:00-05:00"), NOT in UTC. If userTimezone is "UTC" or missing, use "Z". The activity window hours (activityWindow.start/end) are LOCAL times in that timezone.
+- Target planningRules.occupiedHoursPerDay of active activity time per day (excluding travel/meals); if null, use your best judgment.
 - Keep 30-90 min buffer between consecutive activities.
 - defaultDurationMin is a baseline only; you may extend/shorten duration when it improves pacing and day quality.
 - Avoid leaving a day with <2 activities unless candidate set is insufficient.
+- For every action, write a concise human-readable reason (1-2 sentences) explaining WHY you are making that change.
 ${extraInstructions || ''}
   `.trim();
 
@@ -491,6 +496,7 @@ ${JSON.stringify(aiInput)}
 
 Return ONLY valid JSON with this minimal structure:
 {
+  "highLevelSummary": "One or two sentences summarising the plan changes for the user.",
   "dayPlan": [
     { "day": "YYYY-MM-DD", "activityIds": ["id1","id2"] }
   ],
@@ -500,7 +506,8 @@ Return ONLY valid JSON with this minimal structure:
       "itineraryItemId": string | null,
       "activityId": string | null,
       "timelineStartDate": string | null,
-      "timelineEndDate": string | null
+      "timelineEndDate": string | null,
+      "reason": "Brief explanation of why this change is being made."
     }
   ],
   "meta": {
@@ -510,12 +517,12 @@ Return ONLY valid JSON with this minimal structure:
 Constraints:
 1) Do not invent IDs.
 2) If itinerary is empty and activities exist, return add_activity actions with timelineStartDate.
-3) Return up to 8 actions.
-4) Keep output compact (no explanations).
-5) Prioritize day coverage and schedule quality over narrative.
-6) You can modify duration by adjusting timelineEndDate (not fixed to defaultDurationMin).
-7) Before final output, self-check: every day has morning+afternoon coverage.
-8) Do not return conflicting actions for the same time slot (especially add vs update/reorder).
+3) Return up to 16 actions.
+4) Prioritize day coverage and schedule quality over brevity.
+5) You can modify duration by adjusting timelineEndDate (not fixed to defaultDurationMin).
+6) Before final output, self-check: every day has morning+afternoon coverage.
+7) Do not return conflicting actions for the same time slot (especially add vs update/reorder).
+8) Every action MUST include a non-empty "reason" field.
   `.trim();
 
   const modelsToTry = [DEFAULT_MODEL_ID, ...FALLBACK_MODEL_IDS];
@@ -530,7 +537,7 @@ Constraints:
   for (let i = 0; i < modelsToTry.length; i += 1) {
     const modelId = modelsToTry[i];
     const attempt = i + 1;
-    const out = await generateWithModel(modelId, systemInstruction, userPrompt, attempt);
+    const out = await generateWithModel(modelId, systemInstruction, userPrompt, attempt, { maxOutputTokens: 2500 });
     if (out.ok) {
       console.log(`${AI_LOG_PREFIX} request:success`, {
         modelId,

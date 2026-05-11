@@ -27,18 +27,8 @@ async function scoreActivitiesForUser(activities, userId) {
     }
   };
 
-  if (userId) {
-    const user = await User.findById(userId).lean();
-    if (user?.preferences?.trip) {
-      userPreferences = {
-        trip: {
-          activityCategories: user.preferences.trip.activityCategories || [],
-          serviceCategories: user.preferences.trip.serviceCategories || [],
-          tags: user.preferences.trip.tags || []
-        }
-      };
-    }
-  }
+  // Activity/service category signals from user.preferences.trip have been removed;
+  // preferences are now stored in the UserPreference collection and are not used here.
 
   // ------------------------------------------------------
   // 2. Favorite signals (explicit user behavior)

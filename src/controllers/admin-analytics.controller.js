@@ -212,6 +212,7 @@ exports.revenueInsights = async (req, res, next) => {
       paywallViewActorsRows,
       checkoutStartActorsRows,
       purchaseSuccessActorsRows,
+      paywallEventRows,
     ] = await Promise.all([
       UserSubscription.aggregate([
         { $match: { isPro: true, status: { $in: activeStatuses } } },
@@ -431,6 +432,97 @@ exports.revenueInsights = async (req, res, next) => {
         },
         { $count: 'total' },
       ]),
+      AnalyticsEvent.aggregate([
+        {
+          $match: {
+            occurredAt: { $gte: from },
+            event: { $in: ['paywall_view', 'checkout_start', 'purchase_success'] },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              paywallId: { $ifNull: ['$metadata.paywall_id', 'unknown'] },
+              placement: { $ifNull: ['$metadata.entry_point', 'unknown'] },
+              variant: { $ifNull: ['$metadata.ab_variant', 'unknown'] },
+              event: '$event',
+            },
+            total: { $sum: 1 },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              paywallId: '$_id.paywallId',
+              placement: '$_id.placement',
+              variant: '$_id.variant',
+            },
+            stats: {
+              $push: {
+                event: '$_id.event',
+                total: '$total',
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            paywallId: '$_id.paywallId',
+            placement: '$_id.placement',
+            variant: '$_id.variant',
+            paywallView: {
+              $let: {
+                vars: {
+                  row: {
+                    $first: {
+                      $filter: {
+                        input: '$stats',
+                        as: 's',
+                        cond: { $eq: ['$$s.event', 'paywall_view'] },
+                      },
+                    },
+                  },
+                },
+                in: { $ifNull: ['$$row.total', 0] },
+              },
+            },
+            checkoutStart: {
+              $let: {
+                vars: {
+                  row: {
+                    $first: {
+                      $filter: {
+                        input: '$stats',
+                        as: 's',
+                        cond: { $eq: ['$$s.event', 'checkout_start'] },
+                      },
+                    },
+                  },
+                },
+                in: { $ifNull: ['$$row.total', 0] },
+              },
+            },
+            purchaseSuccess: {
+              $let: {
+                vars: {
+                  row: {
+                    $first: {
+                      $filter: {
+                        input: '$stats',
+                        as: 's',
+                        cond: { $eq: ['$$s.event', 'purchase_success'] },
+                      },
+                    },
+                  },
+                },
+                in: { $ifNull: ['$$row.total', 0] },
+              },
+            },
+          },
+        },
+        { $sort: { paywallView: -1, checkoutStart: -1, purchaseSuccess: -1 } },
+      ]),
     ]);
 
     const activeSummary = activeSubsRows?.[0] || {};
@@ -535,6 +627,22 @@ exports.revenueInsights = async (req, res, next) => {
           purchaseFromCheckoutRate: checkoutActors > 0 ? purchaseActors / checkoutActors : 0,
           purchaseFromPaywallRate: paywallActors > 0 ? purchaseActors / paywallActors : 0,
         },
+        paywallMetricsByVariant: (paywallEventRows || []).map((row) => {
+          const paywallView = asNumber(row?.paywallView);
+          const checkoutStart = asNumber(row?.checkoutStart);
+          const purchaseSuccess = asNumber(row?.purchaseSuccess);
+          return {
+            paywallId: row?.paywallId || 'unknown',
+            placement: row?.placement || 'unknown',
+            variant: row?.variant || 'unknown',
+            paywallView,
+            checkoutStart,
+            purchaseSuccess,
+            checkoutFromPaywallRate: paywallView > 0 ? checkoutStart / paywallView : 0,
+            purchaseFromCheckoutRate: checkoutStart > 0 ? purchaseSuccess / checkoutStart : 0,
+            purchaseFromPaywallRate: paywallView > 0 ? purchaseSuccess / paywallView : 0,
+          };
+        }),
         forecast: {
           windowDays: days,
           monthlyGrowthRate,

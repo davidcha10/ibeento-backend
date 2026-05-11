@@ -4,43 +4,6 @@ const USER_ROLES = ['user', 'admin'];
 const USER_STATUS = ['active', 'pending_verification', 'blocked', 'deleted'];
 const DOC_TYPES = ['dni', 'passport', 'id_card', 'other'];
 
-const TripPreferencesSchema = new Schema(
-  {
-    pace: { type: String, enum: ['slow', 'balanced', 'packed'] },
-    type: [
-      {
-        type: String, enum: ['romantic', 'family', 'friends', 'solo', 'business']
-      }
-    ],
-    budget: {
-      level: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
-      preferredCurrency: { type: String, enum: ['USD', 'EUR', 'COP'], default: 'USD' },
-      approxDailySpendUsd: { type: Number }
-    },
-    serviceCategories: [
-      { type: Schema.Types.ObjectId, ref: 'ServiceCategory' }
-    ],
-    activityCategories: [
-      { type: Schema.Types.ObjectId, ref: 'ActivityCategory' }
-    ],
-    preferredTransportMethods: [
-      { type: String, enum: ['walk', 'taxi', 'bus', 'metro', 'bycicle'] }
-    ],
-    timeWindow: {
-      startHour: { type: Number, min: 0, max: 24 },
-      endHour: { type: Number, min: 0, max: 24 },
-      durationHours: { type: Number, min: 0, max: 24 }
-    }
-  },
-  { _id: false }
-);
-
-const PreferencesSchema = new Schema(
-  {
-    trip: { type: TripPreferencesSchema, default: {} },
-  },
-  { _id: false }
-);
 
 const userSchema = new Schema(
   {
@@ -78,8 +41,6 @@ const userSchema = new Schema(
     }],
 
     onboarding: { type: Schema.Types.Mixed, default: null },
-
-    preferences: { type: PreferencesSchema, default: {} }
   },
   { timestamps: true }
 );

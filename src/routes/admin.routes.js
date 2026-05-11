@@ -8,6 +8,8 @@ const adminActivitySyncController = require('../controllers/admin-activity-sync.
 const adminZoneSyncController = require('../controllers/admin-zone-sync.controller');
 const adminCompliancePacksController = require('../controllers/admin-compliance-packs.controller');
 const adminSocialImportLinksController = require('../controllers/admin-social-import-links.controller');
+const adminPaywallVariantsController = require('../controllers/admin-paywall-variants.controller');
+const adminEmailTemplatesController = require('../controllers/admin-email-templates.controller');
 const onboardingTrackingController = require('../controllers/onboarding-tracking.controller');
 
 const router = Router();
@@ -48,5 +50,13 @@ router.post('/compliance-packs', adminCompliancePacksController.create);
 router.put('/compliance-packs/:id', adminCompliancePacksController.updateById);
 router.delete('/compliance-packs/:id', adminCompliancePacksController.deleteById);
 router.get('/social-import-links', adminSocialImportLinksController.list);
+router.get('/paywall-variants', adminPaywallVariantsController.list);
+router.post('/paywall-variants', adminPaywallVariantsController.create);
+router.put('/paywall-variants/:id', adminPaywallVariantsController.updateById);
+router.delete('/paywall-variants/:id', adminPaywallVariantsController.removeById);
+router.get('/email-templates', adminEmailTemplatesController.list);
+router.post('/email-templates', adminEmailTemplatesController.create);
+router.put('/email-templates/:id', adminEmailTemplatesController.updateById);
+router.delete('/email-templates/:id', adminEmailTemplatesController.removeById);
 
 module.exports = router;

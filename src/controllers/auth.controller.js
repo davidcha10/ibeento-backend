@@ -1,5 +1,6 @@
 const argon2 = require('argon2');
 const User = require('../models/User');
+const UserPreference = require('../models/UserPreference');
 const Session = require('../models/Session');
 const { signAccessToken, signRefreshToken, verifyRefresh, hashValue, verifyHash, REFRESH_TTL_DAYS } = require('../utils/tokens');
 const { sendTemplatedEmail } = require('../services/email.service');
@@ -117,6 +118,11 @@ function sanitizeOnboardingPreferences(rawPreferences) {
   const normalizedEndHour = Math.max(startHour, endHour);
   const fallbackDuration = Math.round((normalizedEndHour - normalizedStartHour) * 2) / 2;
 
+  const companionCandidate = safeString(rawPreferences?.travelCompanion, 40).toLowerCase();
+  const validCompanion = ['solo', 'partner', 'friends', 'family'].includes(companionCandidate)
+    ? companionCandidate
+    : null;
+
   return {
     flowVersion: safeString(rawPreferences?.flowVersion, 24) || 'v1',
     sessionId,
@@ -145,96 +151,90 @@ function sanitizeOnboardingPreferences(rawPreferences) {
         fallback: fallbackDuration,
       }),
     },
+    travelCompanion: validCompanion,
     questionSteps,
     updatedAt: new Date(),
   };
 }
 
-function deriveTripPreferencesFromOnboarding(onboardingPreferences) {
-  if (!onboardingPreferences) return null;
-
-  const patch = {};
-  const paceValue = clampNumber(onboardingPreferences?.paceValue, {
-    min: 1,
-    max: 10,
-    fallback: null,
-  });
-
-  if (paceValue !== null) {
-    if (paceValue <= 3) patch.pace = 'slow';
-    else if (paceValue >= 8) patch.pace = 'packed';
-    else patch.pace = 'balanced';
-  }
-
-  const companionsStep = Array.isArray(onboardingPreferences?.questionSteps)
-    ? onboardingPreferences.questionSteps.find((step) => safeString(step?.stepId, 80) === 'new-travel-companions')
-    : null;
-  const companionSelection = safeString(companionsStep?.selectedOptionIds?.[0], 80);
-  const typeByCompanionSelection = {
+function deriveTravelCompanionFromQuestionSteps(questionSteps) {
+  if (!Array.isArray(questionSteps) || !questionSteps.length) return null;
+  const travelCompanionStep = questionSteps.find((step) => String(step?.stepId || '').trim() === 'new-travel-companions');
+  if (!travelCompanionStep) return null;
+  const selected = Array.isArray(travelCompanionStep?.selectedOptionIds)
+    ? travelCompanionStep.selectedOptionIds.map((value) => safeString(value, 80).toLowerCase()).filter(Boolean)
+    : [];
+  const map = {
     'companions-solo': 'solo',
-    'companions-partner': 'romantic',
+    'companions-partner': 'partner',
     'companions-friends': 'friends',
     'companions-family': 'family',
   };
-  const mappedType = typeByCompanionSelection[companionSelection];
-  if (mappedType) patch.type = [mappedType];
-
-  const windowStartHour = clampNumber(onboardingPreferences?.activityWindow?.startHour, {
-    min: 0,
-    max: 24,
-    fallback: null,
-  });
-  const windowEndHour = clampNumber(onboardingPreferences?.activityWindow?.endHour, {
-    min: 0,
-    max: 24,
-    fallback: null,
-  });
-  const windowDurationHours = clampNumber(onboardingPreferences?.activityWindow?.durationHours, {
-    min: 0,
-    max: 24,
-    fallback: null,
-  });
-  if (windowStartHour !== null && windowEndHour !== null) {
-    const startHour = Math.min(windowStartHour, windowEndHour);
-    const endHour = Math.max(windowStartHour, windowEndHour);
-    const fallbackDuration = Math.round((endHour - startHour) * 2) / 2;
-    patch.timeWindow = {
-      startHour,
-      endHour,
-      durationHours: windowDurationHours !== null ? windowDurationHours : fallbackDuration,
-    };
+  for (const optionId of selected) {
+    if (map[optionId]) return map[optionId];
   }
-
-  return Object.keys(patch).length ? patch : null;
+  return null;
 }
 
-function applyOnboardingPreferencesToUser(user, onboardingPreferences) {
-  if (!user || !onboardingPreferences) return;
+/**
+ * Deriva los campos de UserPreference a partir de los datos del onboarding.
+ */
+function deriveUserPreferenceFromOnboarding(onboardingPreferences) {
+  if (!onboardingPreferences) return null;
 
-  const currentPreferences = typeof user.preferences?.toObject === 'function'
-    ? user.preferences.toObject()
-    : (isPlainObject(user.preferences) ? { ...user.preferences } : {});
+  const VALID_ACTIVITY_TYPES = new Set(['culture', 'entertainment', 'food_drinks', 'nature', 'shopping', 'wellness']);
+  const update = {};
 
-  if (Object.prototype.hasOwnProperty.call(currentPreferences, 'onboarding')) {
-    delete currentPreferences.onboarding;
-  }
-  user.onboarding = onboardingPreferences;
-
-  const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
-  if (tripPreferencePatch) {
-    const safeCurrentTripPreferences = isPlainObject(currentPreferences.trip)
-      ? currentPreferences.trip
-      : {};
-    currentPreferences.trip = {
-      ...safeCurrentTripPreferences,
-      ...tripPreferencePatch,
-    };
+  const paceValue = clampNumber(onboardingPreferences?.paceValue, { min: 1, max: 10, fallback: null });
+  if (paceValue !== null) {
+    update.pace = paceValue;
   }
 
-  user.preferences = currentPreferences;
-  if (typeof user.markModified === 'function') {
-    user.markModified('onboarding');
-    user.markModified('preferences');
+  const rawStart = clampNumber(onboardingPreferences?.activityWindow?.startHour, { min: 0, max: 24, fallback: null });
+  const rawEnd   = clampNumber(onboardingPreferences?.activityWindow?.endHour,   { min: 0, max: 24, fallback: null });
+  const rawDur   = clampNumber(onboardingPreferences?.activityWindow?.durationHours, { min: 0, max: 24, fallback: null });
+
+  if (rawStart !== null && rawEnd !== null) {
+    const startHour    = Math.min(rawStart, rawEnd);
+    const endHour      = Math.max(rawStart, rawEnd);
+    const durationHours = rawDur !== null ? rawDur : (endHour - startHour);
+    update.activityWindow = { startHour, endHour, durationHours };
+  }
+
+  const rawTypes = Array.isArray(onboardingPreferences?.favoriteActivityTypes)
+    ? onboardingPreferences.favoriteActivityTypes.filter((t) => VALID_ACTIVITY_TYPES.has(String(t)))
+    : [];
+  if (rawTypes.length) {
+    update.favoriteActivityTypes = rawTypes;
+  }
+
+  const companion = safeString(onboardingPreferences?.travelCompanion, 40).toLowerCase()
+    || deriveTravelCompanionFromQuestionSteps(onboardingPreferences?.questionSteps);
+  if (['solo', 'partner', 'friends', 'family'].includes(companion)) {
+    update.travelCompanion = companion;
+  }
+
+  return Object.keys(update).length ? update : null;
+}
+
+/**
+ * Upsert de UserPreference con los datos derivados del onboarding.
+ * Se ejecuta siempre después de tener el userId definitivo.
+ * Para usuarios existentes solo actualiza los campos de onboarding
+ * (pace, activityWindow); no sobreescribe presupuesto ni tipos favoritos.
+ */
+async function upsertUserPreferenceFromOnboarding(userId, onboardingPreferences) {
+  if (!userId || !onboardingPreferences) return;
+  const prefUpdate = deriveUserPreferenceFromOnboarding(onboardingPreferences);
+  if (!prefUpdate) return;
+  try {
+    await UserPreference.findOneAndUpdate(
+      { userId },
+      { $set: prefUpdate },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } catch (err) {
+    console.error('[auth] upsertUserPreferenceFromOnboarding error', err?.message || err);
   }
 }
 
@@ -269,14 +269,14 @@ exports.register = async (req, res, next) => {
     };
     if (onboardingPreferences) {
       userPayload.onboarding = onboardingPreferences;
-      const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
-      if (tripPreferencePatch) {
-        userPayload.preferences = userPayload.preferences || {};
-        userPayload.preferences.trip = tripPreferencePatch;
-      }
     }
 
     const user = await User.create(userPayload);
+
+    // Persist onboarding data into UserPreference collection now that we have a userId
+    if (onboardingPreferences) {
+      await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
+    }
 
     try {
       await sendTemplatedEmail({
@@ -425,18 +425,18 @@ exports.google = async (req, res, next) => {
         name,
         photo,
         onboardingCompleted: resolvedOnboardingCompleted,
-        providers: [{ provider: 'google', providerId: uid }]
+        providers: [{ provider: 'google', providerId: uid }],
       };
       if (onboardingPreferences) {
         userPayload.onboarding = onboardingPreferences;
-        const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
-        if (tripPreferencePatch) {
-          userPayload.preferences = userPayload.preferences || {};
-          userPayload.preferences.trip = tripPreferencePatch;
-        }
       }
 
       user = await User.create(userPayload);
+
+      // Persist onboarding data into UserPreference collection now that we have a userId
+      if (onboardingPreferences) {
+        await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
+      }
 
       try {
         await sendTemplatedEmail({
@@ -455,7 +455,10 @@ exports.google = async (req, res, next) => {
         user.onboardingCompleted = true;
       }
       if (onboardingPreferences) {
-        applyOnboardingPreferencesToUser(user, onboardingPreferences);
+        user.onboarding = onboardingPreferences;
+        if (typeof user.markModified === 'function') user.markModified('onboarding');
+        // Update only onboarding-derived fields in UserPreference (non-destructive)
+        await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
       }
 
       const hasGoogle = user.providers?.some(p => p.provider === 'google' && p.providerId === uid);
@@ -523,14 +526,14 @@ exports.apple = async (req, res, next) => {
       };
       if (onboardingPreferences) {
         userPayload.onboarding = onboardingPreferences;
-        const tripPreferencePatch = deriveTripPreferencesFromOnboarding(onboardingPreferences);
-        if (tripPreferencePatch) {
-          userPayload.preferences = userPayload.preferences || {};
-          userPayload.preferences.trip = tripPreferencePatch;
-        }
       }
 
       user = await User.create(userPayload);
+
+      // Persist onboarding data into UserPreference collection now that we have a userId
+      if (onboardingPreferences) {
+        await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
+      }
 
       try {
         await sendTemplatedEmail({
@@ -549,7 +552,9 @@ exports.apple = async (req, res, next) => {
         user.onboardingCompleted = true;
       }
       if (onboardingPreferences) {
-        applyOnboardingPreferencesToUser(user, onboardingPreferences);
+        user.onboarding = onboardingPreferences;
+        if (typeof user.markModified === 'function') user.markModified('onboarding');
+        await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
       }
 
       const hasApple = user.providers?.some(p => p.provider === 'apple' && p.providerId === uid);
