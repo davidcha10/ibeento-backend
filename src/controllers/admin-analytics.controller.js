@@ -60,6 +60,10 @@ function toMoney(value) {
   return Math.round(asNumber(value) * 100) / 100;
 }
 
+function escapeRegex(raw = '') {
+  return String(raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function uniqueActorCountByEvent(event, from) {
   const rows = await AnalyticsEvent.aggregate([
     { $match: { event, occurredAt: { $gte: from } } },
@@ -898,6 +902,51 @@ exports.usersInsights = async (req, res, next) => {
           totalLandingViewsWindow,
           timeline: trafficTimeline,
         },
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.usersDirectory = async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.round(limitRaw), 1), 100) : 25;
+
+    const filter = {};
+    if (q) {
+      const safe = escapeRegex(q);
+      filter.$or = [
+        { email: { $regex: safe, $options: 'i' } },
+        { name: { $regex: safe, $options: 'i' } },
+      ];
+    }
+
+    const rows = await User.find(filter)
+      .select('_id name email role status isPro onboardingCompleted createdAt lastLoginAt')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        q,
+        limit,
+        count: rows.length,
+        rows: rows.map((row) => ({
+          _id: String(row._id),
+          name: row.name || '',
+          email: row.email || '',
+          role: row.role || 'user',
+          status: row.status || 'active',
+          isPro: !!row.isPro,
+          onboardingCompleted: !!row.onboardingCompleted,
+          createdAt: row.createdAt || null,
+          lastLoginAt: row.lastLoginAt || null,
+        })),
       },
     });
   } catch (err) {

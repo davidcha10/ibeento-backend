@@ -11,6 +11,7 @@ const routes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const { startSireDailyReportScheduler } = require('./services/sire-daily-report.service');
 const { startOrphanActivityCleanupScheduler } = require('./services/activity-orphan-cleanup.service');
+const { startTrialReminderScheduler } = require('./services/trial-reminder.service');
 const { startDiscoverPreviewPersistentWorker } = require('./controllers/activity.controller');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -81,6 +82,7 @@ const PORT = process.env.PORT || 4000;
   await connectDB(process.env.MONGODB_URI);
   startSireDailyReportScheduler();
   startOrphanActivityCleanupScheduler();
+  startTrialReminderScheduler();
   startDiscoverPreviewPersistentWorker();
   app.listen(PORT, () => console.log(`🚀 API listening at http://localhost:${PORT}`));
 })();

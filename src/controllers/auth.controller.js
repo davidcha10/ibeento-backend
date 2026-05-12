@@ -278,15 +278,13 @@ exports.register = async (req, res, next) => {
       await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
     }
 
-    try {
-      await sendTemplatedEmail({
-        to: user.email,
-        templateKey: 'welcome',
-        data: { name: user.name },
-      });
-    } catch (emailErr) {
+    void sendTemplatedEmail({
+      to: user.email,
+      templateKey: 'welcome',
+      data: { name: user.name },
+    }).catch((emailErr) => {
       console.error('[auth.register] welcome email failed', emailErr?.message || emailErr);
-    }
+    });
 
     const { token: refreshToken } = signRefreshToken({ sub: user._id.toString() });
     const refreshTokenHash = await hashValue(refreshToken);
@@ -438,15 +436,13 @@ exports.google = async (req, res, next) => {
         await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
       }
 
-      try {
-        await sendTemplatedEmail({
-          to: user.email,
-          templateKey: 'welcome',
-          data: { name: user.name },
-        });
-      } catch (emailErr) {
+      void sendTemplatedEmail({
+        to: user.email,
+        templateKey: 'welcome',
+        data: { name: user.name },
+      }).catch((emailErr) => {
         console.error('[auth.google] welcome email failed', emailErr?.message || emailErr);
-      }
+      });
     } else {
       user.lastLoginAt = new Date();
       if (name) user.name = name;
@@ -503,6 +499,7 @@ exports.google = async (req, res, next) => {
 exports.apple = async (req, res, next) => {
   try {
     const { uid, email, name, photo, onboardingCompleted, onboardingPreferences: rawOnboardingPreferences } = req.body;
+    console.log('[auth.apple] request', { hasUid: !!uid, hasEmail: !!email, hasName: !!name });
     if (!uid) return res.status(400).json({ message: 'uid is required' });
 
     const onboardingPreferences = sanitizeOnboardingPreferences(rawOnboardingPreferences);
@@ -535,15 +532,13 @@ exports.apple = async (req, res, next) => {
         await upsertUserPreferenceFromOnboarding(user._id, onboardingPreferences);
       }
 
-      try {
-        await sendTemplatedEmail({
-          to: user.email,
-          templateKey: 'welcome',
-          data: { name: user.name },
-        });
-      } catch (emailErr) {
+      void sendTemplatedEmail({
+        to: user.email,
+        templateKey: 'welcome',
+        data: { name: user.name },
+      }).catch((emailErr) => {
         console.error('[auth.apple] welcome email failed', emailErr?.message || emailErr);
-      }
+      });
     } else {
       user.lastLoginAt = new Date();
       if (name) user.name = name;
@@ -578,6 +573,7 @@ exports.apple = async (req, res, next) => {
 
     setRefreshCookie(res, refreshToken);
     const accessToken = signAccessToken(user);
+    console.log('[auth.apple] success', { userId: String(user._id), email: user.email, isPro: !!user.isPro });
     res.json({
       accessToken,
       user: {
@@ -592,6 +588,7 @@ exports.apple = async (req, res, next) => {
       }
     });
   } catch (err) {
+    console.error('[auth.apple] error', err?.message || err);
     next(err);
   }
 };
