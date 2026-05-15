@@ -103,6 +103,56 @@ function roleRank(role) {
   return String(role || '').toLowerCase() === 'editor' ? 2 : 1;
 }
 
+function mapSharedTimelineItem(item) {
+  const activity = item?.activityId && typeof item.activityId === 'object' ? item.activityId : null;
+  const service = item?.serviceId && typeof item.serviceId === 'object' ? item.serviceId : null;
+  const custom = item?.customData && typeof item.customData === 'object' ? item.customData : null;
+
+  const title =
+    String(custom?.title || '').trim() ||
+    String(activity?.name || '').trim() ||
+    String(service?.title || '').trim() ||
+    'Activity';
+
+  const description =
+    String(custom?.description || '').trim() ||
+    String(activity?.description || '').trim() ||
+    String(service?.description || '').trim() ||
+    '';
+
+  const address =
+    String(item?.location?.address || '').trim() ||
+    String(activity?.location?.address || '').trim() ||
+    String(service?.location?.address || '').trim() ||
+    '';
+
+  const image =
+    String(activity?.media?.cover || '').trim() ||
+    String(activity?.media?.images?.[0]?.url || '').trim() ||
+    '';
+
+  const category =
+    String(item?.activityCategory?.name || '').trim() ||
+    String(item?.serviceCategory?.name || '').trim() ||
+    '';
+
+  return {
+    _id: String(item?._id || ''),
+    type: String(item?.type || 'activity'),
+    status: String(item?.status || '').trim() || 'draft',
+    bookingStatus: String(item?.bookingStatus || '').trim() || 'none',
+    timelineStartDate: item?.timelineStartDate || null,
+    timelineEndDate: item?.timelineEndDate || null,
+    title,
+    description,
+    address,
+    image,
+    category,
+    notes: String(item?.notes || '').trim(),
+    guestsTotal: Number(item?.guests?.total || 0),
+  };
+}
+
 async function enforceNonProItineraryLimit(userId) {
   if (!userId || !isValidObjectId(userId)) return;
 
@@ -662,6 +712,94 @@ exports.createShareLink = async (req, res, next) => {
       token,
       shareUrl,
       expiresInDays: INVITE_LINK_TTL_DAYS,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.viewShareLink = async (req, res, next) => {
+  try {
+    const token = String(req.query?.token || req.body?.token || '').trim();
+    if (!token) return res.status(400).json({ error: 'token is required' });
+
+    let payload;
+    try {
+      payload = verifyInviteLinkToken(token);
+    } catch {
+      return res.status(400).json({ error: 'Invalid or expired invite link' });
+    }
+
+    if (String(payload?.typ || '') !== 'itinerary_share_link') {
+      return res.status(400).json({ error: 'Invalid invite link type' });
+    }
+
+    const itineraryId = toObjectIdString(payload?.itineraryId);
+    if (!itineraryId) return res.status(400).json({ error: 'Invalid itinerary id in link' });
+
+    const itinerary = await Itinerary.findById(itineraryId)
+      .select('_id name tripStartDate tripEndDate status visitPlaces destinations guests')
+      .lean();
+    if (!itinerary) return res.status(404).json({ error: 'Itinerary not found' });
+
+    const items = await ItineraryItem.find({ itineraryId: itinerary._id })
+      .sort({ timelineStartDate: 1, createdAt: 1 })
+      .populate('activityId', 'name description location media')
+      .populate('serviceId', 'title description location')
+      .lean();
+
+    const mappedItems = (items || []).map(mapSharedTimelineItem);
+
+    return res.json({
+      ok: true,
+      itinerary: {
+        _id: String(itinerary._id),
+        name: itinerary.name || 'Shared itinerary',
+        tripStartDate: itinerary.tripStartDate || null,
+        tripEndDate: itinerary.tripEndDate || null,
+        guests: itinerary.guests || null,
+        visitPlacesCount: Array.isArray(itinerary.visitPlaces) ? itinerary.visitPlaces.length : 0,
+      },
+      items: mappedItems,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+exports.viewSharedItinerary = async (req, res, next) => {
+  try {
+    const itineraryId = toObjectIdString(req.query?.itineraryId || req.params?.itineraryId || '');
+    if (!itineraryId) return res.status(400).json({ error: 'itineraryId is required' });
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+
+    const itinerary = await Itinerary.findById(itineraryId)
+      .select('_id userId name tripStartDate tripEndDate sharedWith guests visitPlaces')
+      .lean();
+    if (!itinerary) return res.status(404).json({ error: 'Itinerary not found' });
+    if (!canReadItinerary(itinerary, req.user)) {
+      return res.status(403).json({ error: 'Forbidden: no access to this itinerary' });
+    }
+
+    const items = await ItineraryItem.find({ itineraryId: itinerary._id })
+      .sort({ timelineStartDate: 1, createdAt: 1 })
+      .populate('activityId', 'name description location media')
+      .populate('serviceId', 'title description location')
+      .lean();
+
+    const mappedItems = (items || []).map(mapSharedTimelineItem);
+
+    return res.json({
+      ok: true,
+      itinerary: {
+        _id: String(itinerary._id),
+        name: itinerary.name || 'Shared itinerary',
+        tripStartDate: itinerary.tripStartDate || null,
+        tripEndDate: itinerary.tripEndDate || null,
+        guests: itinerary.guests || null,
+        visitPlacesCount: Array.isArray(itinerary.visitPlaces) ? itinerary.visitPlaces.length : 0,
+      },
+      items: mappedItems,
     });
   } catch (err) {
     return next(err);

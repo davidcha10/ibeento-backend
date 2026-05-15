@@ -7,6 +7,15 @@ const { buildWebAppUrl } = require('../utils/web-app-url');
 
 const ACTIVE_SUB_STATUSES = new Set(['active', 'trialing']);
 
+/** Masks an email for display: "david@gmail.com" → "da***@gmail.com" */
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '';
+  const [local, domain] = email.split('@');
+  const visible = Math.min(2, local.length);
+  const masked = local.slice(0, visible) + '*'.repeat(Math.max(3, local.length - visible));
+  return `${masked}@${domain}`;
+}
+
 function deriveAutoRenew(stripeSubscription, status) {
   const hasScheduledCancel = Boolean(
     stripeSubscription?.cancel_at_period_end || stripeSubscription?.cancel_at
@@ -69,6 +78,22 @@ function getPlanConfig(plan) {
       priceId: String(process.env.STRIPE_PRICE_ID_TRIAL || '').trim(),
       planId: 'trial',
       planName: 'Trial',
+    };
+  }
+
+  if (key === 'yearly_trial') {
+    return {
+      priceId: String(process.env.STRIPE_PRICE_ID_YEARLY || '').trim(),
+      planId: 'yearly_trial',
+      planName: 'Yearly (Trial)',
+    };
+  }
+
+  if (key === 'weekly_trial') {
+    return {
+      priceId: String(process.env.STRIPE_PRICE_ID_WEEKLY || '').trim(),
+      planId: 'weekly_trial',
+      planName: 'Weekly (Trial)',
     };
   }
 
@@ -265,20 +290,58 @@ exports.createCheckoutSession = async (req, res, next) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     let forceNoTrial = false;
-    if (plan === 'trial') {
+    let trialPeriodDays = 0;
+    const requestedPlan = plan;
+
+    // Legacy compatibility: "trial" behaves as weekly with 3-day trial.
+    if (requestedPlan === 'trial') {
+      trialPeriodDays = 3;
+      const weeklyConfig = getPlanConfig('weekly');
+      if (weeklyConfig?.priceId) {
+        planConfig = {
+          ...weeklyConfig,
+          planId: 'weekly_trial',
+          planName: 'Weekly (Trial)',
+        };
+      }
+    } else if (requestedPlan === 'yearly_trial') {
+      trialPeriodDays = 7;
+      const yearlyConfig = getPlanConfig('yearly');
+      if (yearlyConfig?.priceId) {
+        planConfig = {
+          ...yearlyConfig,
+          planId: 'yearly_trial',
+          planName: 'Yearly (Trial)',
+        };
+      }
+    } else if (requestedPlan === 'weekly_trial') {
+      trialPeriodDays = 3;
+      const weeklyConfig = getPlanConfig('weekly');
+      if (weeklyConfig?.priceId) {
+        planConfig = {
+          ...weeklyConfig,
+          planId: 'weekly_trial',
+          planName: 'Weekly (Trial)',
+        };
+      }
+    }
+
+    if (trialPeriodDays > 0) {
       const billingHistory = await hasAnyBillingHistory({
         userId: user._id,
         stripeCustomerId: user.stripeCustomerId,
         stripe,
       });
       if (billingHistory) {
-        const weeklyConfig = getPlanConfig('weekly');
-        if (weeklyConfig?.priceId) {
-          planConfig = weeklyConfig;
+        trialPeriodDays = 0;
+        forceNoTrial = true;
+        if (planConfig.planId === 'yearly_trial') {
+          planConfig = {
+            ...planConfig,
+            planId: 'yearly',
+            planName: 'Yearly',
+          };
         } else {
-          // Fallback if weekly price id is not configured yet:
-          // keep the selected price and force Stripe to start immediately with no trial period.
-          forceNoTrial = true;
           planConfig = {
             ...planConfig,
             planId: 'weekly',
@@ -296,10 +359,12 @@ exports.createCheckoutSession = async (req, res, next) => {
       metadata: {
         userId: String(user._id),
         planId: planConfig.planId,
+        requestedPlan,
         entryPoint,
         paywallId,
         abVariant,
       },
+      ...(trialPeriodDays > 0 ? { trial_period_days: trialPeriodDays } : {}),
       ...(forceNoTrial ? { trial_end: 'now' } : {}),
     };
 
@@ -602,13 +667,52 @@ exports.syncAppleSubscription = async (req, res, next) => {
     const isActive = !hasRevocation && (!hasExpiry || expiresDateRaw > now);
     const status = isActive ? 'active' : 'expired';
     const isPro = isActive;
+    const canonicalProviderSubscriptionId = originalTransactionId || transactionId;
+
+    // Ownership guard #1:
+    // A provider subscription (original transaction) cannot belong to a different user.
+    const existingSubscriptionOwner = await UserSubscription.findOne({
+      provider: 'apple',
+      providerSubscriptionId: canonicalProviderSubscriptionId,
+      userId: { $ne: req.user._id },
+    })
+      .select('_id userId providerSubscriptionId')
+      .lean();
+    if (existingSubscriptionOwner) {
+      const conflictUser = await User.findById(existingSubscriptionOwner.userId).select('email').lean();
+      const maskedEmail = maskEmail(conflictUser?.email || '');
+      return res.status(409).json({
+        error: 'apple_subscription_already_claimed',
+        message: 'This Apple subscription is already linked to another account.',
+        maskedEmail,
+      });
+    }
+
+    // Ownership guard #2:
+    // A transactionId cannot be claimed by a different user.
+    const existingTxOwner = await BillingTransaction.findOne({
+      provider: 'apple',
+      externalTransactionId: transactionId,
+      userId: { $ne: req.user._id },
+    })
+      .select('_id userId externalTransactionId')
+      .lean();
+    if (existingTxOwner) {
+      const conflictUser = await User.findById(existingTxOwner.userId).select('email').lean();
+      const maskedEmail = maskEmail(conflictUser?.email || '');
+      return res.status(409).json({
+        error: 'apple_transaction_already_claimed',
+        message: 'This Apple transaction is already linked to another account.',
+        maskedEmail,
+      });
+    }
 
     await UserSubscription.findOneAndUpdate(
       { userId: req.user._id },
       {
         $set: {
           provider: 'apple',
-          providerSubscriptionId: originalTransactionId || transactionId,
+          providerSubscriptionId: canonicalProviderSubscriptionId,
           status,
           isPro,
           autoRenew: isActive,
@@ -648,7 +752,7 @@ exports.syncAppleSubscription = async (req, res, next) => {
           occurredAt: purchaseDate,
           processedAt: now,
           source: 'ios_iap_client',
-          providerSubscriptionId: originalTransactionId || transactionId,
+          providerSubscriptionId: canonicalProviderSubscriptionId,
           plan: {
             planId: productId,
             planName: 'Apple Subscription',
@@ -691,9 +795,17 @@ exports.syncAppleSubscription = async (req, res, next) => {
       isPro,
       productId,
       transactionId,
-      originalTransactionId: originalTransactionId || transactionId,
+      originalTransactionId: canonicalProviderSubscriptionId,
     });
   } catch (err) {
+    // Race-condition guard: if two users try to claim the same Apple subscription/tx
+    // at nearly the same time, Mongo unique indexes may throw duplicate key errors.
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        error: 'apple_subscription_conflict',
+        message: 'This Apple subscription is already linked to another account.',
+      });
+    }
     return next(err);
   }
 };

@@ -212,6 +212,60 @@ exports.upsertProgress = async (req, res, next) => {
   }
 };
 
+exports.getProgress = async (req, res, next) => {
+  try {
+    const flowVersion = safeString(req.query?.flowVersion) || 'v1';
+    const sessionId = safeString(req.query?.sessionId);
+    const userId = resolveOptionalUserId(req);
+
+    if (!userId && !sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'sessionId is required when no authenticated user is present',
+      });
+    }
+
+    let doc = null;
+
+    // 1) Always prefer the explicit current session first.
+    if (sessionId) {
+      doc = await OnboardingResponse.findOne({ sessionId, flowVersion }).lean();
+    }
+
+    // 2) Fallback to latest record for authenticated user.
+    if (!doc && userId) {
+      doc = await OnboardingResponse.findOne({ userId, flowVersion })
+        .sort({ lastSeenAt: -1, updatedAt: -1 })
+        .lean();
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: doc
+        ? {
+            sessionId: doc.sessionId,
+            flowVersion: doc.flowVersion || flowVersion,
+            maxStepIndex: normalizeStepIndex(doc.maxStepIndex) || 1,
+            totalSteps: normalizeStepIndex(doc.totalSteps) || null,
+            questionSteps: Array.isArray(doc.questionSteps)
+              ? doc.questionSteps.map((step) => ({
+                  stepId: safeString(step?.stepId),
+                  stepIndex: normalizeStepIndex(step?.stepIndex) || null,
+                  reached: !!step?.reached,
+                  answered: !!step?.answered,
+                  selectedOptionIds: Array.isArray(step?.selectedOptionIds) ? step.selectedOptionIds : [],
+                }))
+              : [],
+            completedAt: doc.completedAt || null,
+            lastSeenAt: doc.lastSeenAt || null,
+          }
+        : null,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 exports.getAdminFunnel = async (req, res, next) => {
   try {
     const days = parseDays(req.query.days, 30);

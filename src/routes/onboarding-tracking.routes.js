@@ -3,6 +3,7 @@ const onboardingTrackingController = require('../controllers/onboarding-tracking
 
 const router = Router();
 
+router.get('/progress', onboardingTrackingController.getProgress);
 router.put('/progress', onboardingTrackingController.upsertProgress);
 
 module.exports = router;

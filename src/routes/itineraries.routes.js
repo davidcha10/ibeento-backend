@@ -7,6 +7,9 @@ const router = Router();
 router.use(authOptional);
 
 // /api/itineraries
+router.get('/share/link/view', Itineraries.viewShareLink);
+router.get('/share/view', Itineraries.viewSharedItinerary);
+router.post('/share/link/accept', Itineraries.acceptShareLink);
 router.post('/', Itineraries.create);
 router.get('/',  Itineraries.list);
 router.get('/:itineraryId', Itineraries.get);
@@ -17,7 +20,6 @@ router.get('/:itineraryId/share', Itineraries.listShares);
 router.post('/:itineraryId/share', Itineraries.share);
 router.post('/:itineraryId/share/link', Itineraries.createShareLink);
 router.post('/:itineraryId/share/accept', Itineraries.acceptInvite);
-router.post('/share/link/accept', Itineraries.acceptShareLink);
 router.delete('/:itineraryId/share/:memberId', Itineraries.unshare);
 
 // /api/itineraries/:itineraryId/items
