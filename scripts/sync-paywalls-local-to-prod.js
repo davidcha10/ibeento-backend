@@ -3,7 +3,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const mongoose = require('mongoose');
 
 const localUri = process.env.LOCAL_MONGODB_URI || process.env.MONGODB_URI;
-const prodUri = process.env.PROD_MONGODB_URI;
+const prodUri = String(process.env.PROD_MONGODB_URI || '').replace(/^"|"$/g, '');
 
 const TARGET_KEYS = new Set([
   'current_onboard_paywall',
@@ -16,7 +16,7 @@ async function main() {
   }
 
   const localConn = await mongoose.createConnection(localUri).asPromise();
-  const prodConn = await mongoose.createConnection(prodUri).asPromise();
+  const prodConn = await mongoose.createConnection(prodUri, { family: 4 }).asPromise();
 
   const schema = new mongoose.Schema(
     {

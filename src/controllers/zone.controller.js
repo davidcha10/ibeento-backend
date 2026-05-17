@@ -343,6 +343,7 @@ exports.listZones = async (req, res) => {
     const active = req.query.active === "true" ? true : req.query.active === "false" ? false : undefined;
     const limit = Math.min(Number(req.query.limit) || 50, 500);
     const offset = Number(req.query.offset) || 0;
+    const includePath = req.query.includePath === "true";
 
     const filter = {};
     if (q) {
@@ -395,7 +396,37 @@ exports.listZones = async (req, res) => {
       Zone.countDocuments(filter)
     ]);
 
-    return res.json({ results: results.map(attachLegacySnapshotFields), total, limit, offset });
+    let hydratedResults = results.map(attachLegacySnapshotFields);
+
+    if (includePath && hydratedResults.length) {
+      const ancestryIds = Array.from(
+        new Set(
+          hydratedResults
+            .flatMap((zone) => (Array.isArray(zone?.ancestry) ? zone.ancestry : []))
+            .map((id) => String(id))
+            .filter(Boolean)
+        )
+      );
+
+      const ancestryDocs = ancestryIds.length
+        ? await Zone.find({ _id: { $in: ancestryIds } }).select("_id name").lean()
+        : [];
+      const ancestryById = new Map(ancestryDocs.map((doc) => [String(doc._id), doc]));
+
+      hydratedResults = hydratedResults.map((zone) => {
+        const chain = (Array.isArray(zone?.ancestry) ? zone.ancestry : [])
+          .map((id) => ancestryById.get(String(id))?.name)
+          .filter(Boolean);
+        const pathNames = [...chain, zone?.name].filter(Boolean);
+        return {
+          ...zone,
+          pathNames,
+          pathLabel: pathNames.join(" > "),
+        };
+      });
+    }
+
+    return res.json({ results: hydratedResults, total, limit, offset });
   } catch (err) {
     return res.status(500).json({ error: "Error listando zonas" });
   }

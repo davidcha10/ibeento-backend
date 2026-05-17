@@ -184,6 +184,7 @@ const activitySchema = new Schema({
           'unknown',
           'free',
           'ticket_required',
+          'ticket_optional',
           'reservation_required',
           'reservation_recommended',
           'pay_on_site',
