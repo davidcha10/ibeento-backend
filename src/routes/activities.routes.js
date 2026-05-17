@@ -27,6 +27,7 @@ router.get('/:id/comments', activityCommentController.listByActivity);
 router.post('/:id/comments', auth, activityCommentController.createForActivity);
 router.get('/:id/services', serviceController.listByActivity);
 router.post('/:id/services', auth, serviceController.createForActivity);
+router.get('/admin/timeline-stats', auth, activityController.adminTimelineStats); // Chart data for admin dashboard
 router.post('/', auth, activityController.create);                 // Crear nueva actividad
 router.get('/', activityController.list);                    // Listar actividades (filtros: q,type,countryId,regionId,cityId,...)
 router.get('/:id', activityController.get);                  // Obtener una actividad por ID

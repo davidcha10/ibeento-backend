@@ -6282,3 +6282,66 @@ exports.remove = async (req, res) => {
 };
 
 exports.startDiscoverPreviewPersistentWorker = startDiscoverPreviewPersistentWorker;
+
+/**
+ * GET /activities/admin/timeline-stats
+ * Returns monthly counts of total and audited activities for the chart.
+ * Query params:
+ *   zoneIds  — comma-separated zone ObjectIds to filter by (optional)
+ *   months   — how many months back to include (default 12, max 36)
+ */
+exports.adminTimelineStats = async (req, res) => {
+  try {
+    const monthsBack = Math.min(36, Math.max(1, parseInt(req.query.months, 10) || 12));
+    const rawZoneIds = String(req.query.zoneIds || '').trim();
+    const zoneIds = rawZoneIds
+      ? rawZoneIds.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+
+    const now = new Date();
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1), 1));
+
+    const matchBase = { createdAt: { $gte: from } };
+    if (zoneIds.length) {
+      const { Types } = require('mongoose');
+      const objectIds = zoneIds.map(id => { try { return new Types.ObjectId(id); } catch { return null; } }).filter(Boolean);
+      if (objectIds.length) matchBase['location.zonePathIds'] = { $in: objectIds };
+    }
+
+    const pipeline = [
+      { $match: matchBase },
+      {
+        $group: {
+          _id: {
+            year:  { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+          },
+          total:   { $sum: 1 },
+          audited: { $sum: { $cond: [{ $eq: ['$audit.isAudited', true] }, 1, 0] } },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ];
+
+    const rows = await Activity.aggregate(pipeline);
+
+    // Build a complete series for every month in range (fill gaps with 0)
+    const labels = [];
+    const total = [];
+    const audited = [];
+    for (let i = 0; i < monthsBack; i++) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1 - i), 1));
+      const y = d.getUTCFullYear();
+      const m = d.getUTCMonth() + 1;
+      const found = rows.find(r => r._id.year === y && r._id.month === m);
+      labels.push(`${d.toLocaleString('en', { month: 'short', timeZone: 'UTC' })} ${String(y).slice(2)}`);
+      total.push(found ? found.total : 0);
+      audited.push(found ? found.audited : 0);
+    }
+
+    return res.json({ labels, total, audited });
+  } catch (err) {
+    console.error('[adminTimelineStats] error:', err);
+    return res.status(500).json({ error: 'Failed to load timeline stats' });
+  }
+};
