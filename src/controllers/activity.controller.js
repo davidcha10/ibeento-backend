@@ -6285,21 +6285,44 @@ exports.startDiscoverPreviewPersistentWorker = startDiscoverPreviewPersistentWor
 
 /**
  * GET /activities/admin/timeline-stats
- * Returns monthly counts of total and audited activities for the chart.
+ * Returns activity counts over time for the admin chart.
  * Query params:
- *   zoneIds  — comma-separated zone ObjectIds to filter by (optional)
- *   months   — how many months back to include (default 12, max 36)
+ *   period  — '1w' | '1m' | '3m' | '6m' | '12m' | '24m' (default '12m')
+ *   zoneIds — comma-separated zone ObjectIds (optional)
+ *
+ * Granularity is chosen automatically:
+ *   1w, 1m → group by day
+ *   3m      → group by week
+ *   6m+     → group by month
  */
 exports.adminTimelineStats = async (req, res) => {
   try {
-    const monthsBack = Math.min(36, Math.max(1, parseInt(req.query.months, 10) || 12));
+    const VALID_PERIODS = new Set(['1w', '1m', '3m', '6m', '12m', '24m']);
+    const period = VALID_PERIODS.has(req.query.period) ? req.query.period : '12m';
+
     const rawZoneIds = String(req.query.zoneIds || '').trim();
     const zoneIds = rawZoneIds
       ? rawZoneIds.split(',').map(s => s.trim()).filter(Boolean)
       : [];
 
     const now = new Date();
-    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1), 1));
+    let from;
+    let granularity; // 'day' | 'week' | 'month'
+
+    if (period === '1w') {
+      from = new Date(now); from.setUTCDate(from.getUTCDate() - 6); from.setUTCHours(0,0,0,0);
+      granularity = 'day';
+    } else if (period === '1m') {
+      from = new Date(now); from.setUTCDate(from.getUTCDate() - 29); from.setUTCHours(0,0,0,0);
+      granularity = 'day';
+    } else if (period === '3m') {
+      from = new Date(now); from.setUTCDate(from.getUTCDate() - 89); from.setUTCHours(0,0,0,0);
+      granularity = 'week';
+    } else {
+      const monthsBack = period === '6m' ? 6 : period === '24m' ? 24 : 12;
+      from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1), 1));
+      granularity = 'month';
+    }
 
     const matchBase = { createdAt: { $gte: from } };
     if (zoneIds.length) {
@@ -6308,38 +6331,69 @@ exports.adminTimelineStats = async (req, res) => {
       if (objectIds.length) matchBase['location.zonePathIds'] = { $in: objectIds };
     }
 
-    const pipeline = [
+    const auditCond = { $sum: { $cond: [{ $eq: ['$audit.isAudited', true] }, 1, 0] } };
+
+    let groupId, pipeline;
+    if (granularity === 'day') {
+      groupId = { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, day: { $dayOfMonth: '$createdAt' } };
+    } else if (granularity === 'week') {
+      groupId = { year: { $isoWeekYear: '$createdAt' }, week: { $isoWeek: '$createdAt' } };
+    } else {
+      groupId = { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } };
+    }
+
+    pipeline = [
       { $match: matchBase },
-      {
-        $group: {
-          _id: {
-            year:  { $year: '$createdAt' },
-            month: { $month: '$createdAt' },
-          },
-          total:   { $sum: 1 },
-          audited: { $sum: { $cond: [{ $eq: ['$audit.isAudited', true] }, 1, 0] } },
-        },
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1 } },
+      { $group: { _id: groupId, total: { $sum: 1 }, audited: auditCond } },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.week': 1, '_id.day': 1 } },
     ];
 
     const rows = await Activity.aggregate(pipeline);
 
-    // Build a complete series for every month in range (fill gaps with 0)
+    // Build a complete series filling gaps with 0
     const labels = [];
     const total = [];
     const audited = [];
-    for (let i = 0; i < monthsBack; i++) {
-      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1 - i), 1));
-      const y = d.getUTCFullYear();
-      const m = d.getUTCMonth() + 1;
-      const found = rows.find(r => r._id.year === y && r._id.month === m);
-      labels.push(`${d.toLocaleString('en', { month: 'short', timeZone: 'UTC' })} ${String(y).slice(2)}`);
-      total.push(found ? found.total : 0);
-      audited.push(found ? found.audited : 0);
+    const DAY_MS = 86400000;
+
+    if (granularity === 'day') {
+      const days = period === '1w' ? 7 : 30;
+      for (let i = 0; i < days; i++) {
+        const d = new Date(from.getTime() + i * DAY_MS);
+        const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+        const found = rows.find(r => r._id.year === y && r._id.month === m && r._id.day === day);
+        labels.push(`${d.toLocaleString('en', { month: 'short', timeZone: 'UTC' })} ${day}`);
+        total.push(found ? found.total : 0);
+        audited.push(found ? found.audited : 0);
+      }
+    } else if (granularity === 'week') {
+      // Build 13 weekly buckets
+      for (let i = 0; i < 13; i++) {
+        const d = new Date(from.getTime() + i * 7 * DAY_MS);
+        // ISO week helpers
+        const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+        tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+        const isoWeek = Math.ceil(((tmp - yearStart) / DAY_MS + 1) / 7);
+        const isoYear = tmp.getUTCFullYear();
+        const found = rows.find(r => r._id.year === isoYear && r._id.week === isoWeek);
+        labels.push(`W${isoWeek} ${String(isoYear).slice(2)}`);
+        total.push(found ? found.total : 0);
+        audited.push(found ? found.audited : 0);
+      }
+    } else {
+      const monthsBack = period === '6m' ? 6 : period === '24m' ? 24 : 12;
+      for (let i = 0; i < monthsBack; i++) {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1 - i), 1));
+        const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
+        const found = rows.find(r => r._id.year === y && r._id.month === m);
+        labels.push(`${d.toLocaleString('en', { month: 'short', timeZone: 'UTC' })} ${String(y).slice(2)}`);
+        total.push(found ? found.total : 0);
+        audited.push(found ? found.audited : 0);
+      }
     }
 
-    return res.json({ labels, total, audited });
+    return res.json({ labels, total, audited, period, granularity });
   } catch (err) {
     console.error('[adminTimelineStats] error:', err);
     return res.status(500).json({ error: 'Failed to load timeline stats' });
