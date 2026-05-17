@@ -5449,12 +5449,49 @@ exports.list = async (req, res) => {
     };
 
     if (q) {
-      const re = new RegExp(String(q).trim(), 'i');
+      const rawQ = String(q).trim();
+      const re = new RegExp(rawQ, 'i');
+      const isQid = /^Q\d+$/i.test(rawQ);
+      const qidUpper = rawQ.toUpperCase();
+
       filter.$or = [
         { name: re },
         { slug: re },
-        { description: re }
+        { description: re },
+        { 'externalRef.id': isQid ? qidUpper : re },
+        { 'sourceClaims.externalId': isQid ? qidUpper : re },
       ];
+
+      // Match against any localized name value in names map/object.
+      addAndFilter({
+        $or: [
+          { $or: filter.$or },
+          {
+            $expr: {
+              $gt: [
+                {
+                  $size: {
+                    $filter: {
+                      input: { $objectToArray: { $ifNull: ['$names', {}] } },
+                      as: 'nameEntry',
+                      cond: {
+                        $regexMatch: {
+                          input: { $toString: '$$nameEntry.v' },
+                          regex: rawQ,
+                          options: 'i',
+                        },
+                      },
+                    },
+                  },
+                },
+                0,
+              ],
+            },
+          },
+        ],
+      });
+
+      delete filter.$or;
     }
 
     if (type) {
