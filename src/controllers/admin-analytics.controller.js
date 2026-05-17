@@ -1023,3 +1023,139 @@ exports.contentInsights = async (req, res, next) => {
     return next(err);
   }
 };
+
+// ── Users timeline stats ────────────────────────────────────────────────────
+// GET /admin/analytics/users-timeline-stats?period=12m
+// Returns { labels, total, pro, period, granularity }
+exports.usersTimelineStats = async (req, res, next) => {
+  try {
+    const periodParam = String(req.query.period || '12m').toLowerCase();
+    const validPeriods = ['1w', '1m', '3m', '6m', '12m', '24m'];
+    const period = validPeriods.includes(periodParam) ? periodParam : '12m';
+
+    // Map period → days and granularity
+    const periodConfig = {
+      '1w':  { days: 7,   granularity: 'day'   },
+      '1m':  { days: 30,  granularity: 'day'   },
+      '3m':  { days: 91,  granularity: 'week'  },
+      '6m':  { days: 182, granularity: 'month' },
+      '12m': { days: 365, granularity: 'month' },
+      '24m': { days: 730, granularity: 'month' },
+    };
+    const { days, granularity } = periodConfig[period];
+
+    const windowStart = startOfUtcDay(rangeStart(days));
+    const todayUtc    = startOfUtcDay(new Date());
+
+    // ── Aggregate new users per bucket ──────────────────────────────
+    let groupId;
+    if (granularity === 'day') {
+      groupId = { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } };
+    } else if (granularity === 'week') {
+      groupId = {
+        year: { $isoWeekYear: '$createdAt' },
+        week: { $isoWeek: '$createdAt' },
+      };
+    } else {
+      groupId = { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'UTC' } };
+    }
+
+    const [newTotalRows, newProRows, baseTotal, basePro] = await Promise.all([
+      // new total users per bucket in window
+      User.aggregate([
+        { $match: { createdAt: { $gte: windowStart } } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      // new PRO users per bucket in window (using isPro flag as proxy)
+      User.aggregate([
+        { $match: { createdAt: { $gte: windowStart }, isPro: true } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      // users created before window start (base cumulative count)
+      User.countDocuments({ createdAt: { $lt: windowStart } }),
+      // PRO users created before window start
+      User.countDocuments({ createdAt: { $lt: windowStart }, isPro: true }),
+    ]);
+
+    // ── Build label → count maps ────────────────────────────────────
+    function rowKey(doc) {
+      if (granularity === 'week') return `${doc._id.year}-W${String(doc._id.week).padStart(2, '0')}`;
+      return doc._id;
+    }
+
+    const totalMap = new Map(newTotalRows.map((r) => [rowKey(r), r.count]));
+    const proMap   = new Map(newProRows.map((r)   => [rowKey(r), r.count]));
+
+    // ── Walk buckets and build series ──────────────────────────────
+    const labels = [];
+    const totalSeries = [];
+    const proSeries   = [];
+
+    let cumTotal = baseTotal;
+    let cumPro   = basePro;
+
+    if (granularity === 'day') {
+      for (let cur = new Date(windowStart); cur <= todayUtc; cur = new Date(cur.getTime() + 86_400_000)) {
+        const key = cur.toISOString().slice(0, 10);
+        cumTotal += Number(totalMap.get(key) || 0);
+        cumPro   += Number(proMap.get(key)   || 0);
+        const label = cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        labels.push(label);
+        totalSeries.push(cumTotal);
+        proSeries.push(cumPro);
+      }
+    } else if (granularity === 'week') {
+      const isoWeekKey = (d) => {
+        const thursday = new Date(d.getTime());
+        thursday.setUTCDate(thursday.getUTCDate() - ((thursday.getUTCDay() + 6) % 7) + 3);
+        const year = thursday.getUTCFullYear();
+        const jan4 = new Date(Date.UTC(year, 0, 4));
+        const week = 1 + Math.round(((thursday - jan4) / 86_400_000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+        return `${year}-W${String(week).padStart(2, '0')}`;
+      };
+
+      const weekSet = new Set();
+      for (let cur = new Date(windowStart); cur <= todayUtc; cur = new Date(cur.getTime() + 7 * 86_400_000)) {
+        weekSet.add(isoWeekKey(cur));
+      }
+      weekSet.add(isoWeekKey(todayUtc));
+
+      for (const wk of [...weekSet].sort()) {
+        cumTotal += Number(totalMap.get(wk) || 0);
+        cumPro   += Number(proMap.get(wk)   || 0);
+        const [yr, wnum] = wk.split('-W');
+        const label = `W${wnum} '${yr.slice(2)}`;
+        labels.push(label);
+        totalSeries.push(cumTotal);
+        proSeries.push(cumPro);
+      }
+    } else {
+      // Monthly
+      let cur = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth(), 1));
+      const endMonth = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), 1));
+      while (cur <= endMonth) {
+        const key = cur.toISOString().slice(0, 7); // YYYY-MM
+        cumTotal += Number(totalMap.get(key) || 0);
+        cumPro   += Number(proMap.get(key)   || 0);
+        const label = cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+        labels.push(label);
+        totalSeries.push(cumTotal);
+        proSeries.push(cumPro);
+        cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1));
+      }
+    }
+
+    return res.json({
+      success: true,
+      labels,
+      total: totalSeries,
+      pro:   proSeries,
+      period,
+      granularity,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};

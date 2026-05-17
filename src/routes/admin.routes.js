@@ -24,6 +24,7 @@ router.get('/analytics/users', adminAnalyticsController.usersInsights);
 router.get('/analytics/users-directory', adminAnalyticsController.usersDirectory);
 router.get('/analytics/content', adminAnalyticsController.contentInsights);
 router.get('/analytics/onboarding-funnel', onboardingTrackingController.getAdminFunnel);
+router.get('/analytics/users-timeline-stats', adminAnalyticsController.usersTimelineStats);
 
 router.get('/taxonomy/zone-types', adminTaxonomyController.list);
 router.get('/taxonomy/zone-types/:qid', adminTaxonomyController.getByQid);
