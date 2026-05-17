@@ -18,9 +18,16 @@ function toAnalyticsKey(value = '') {
 
 function normalizePayload(body = {}) {
   const name = String(body.name || '').trim();
+  const deepLinkKey = String(body.deepLinkKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 140);
   const payload = {
     name,
     analyticsKey: toAnalyticsKey(body.analyticsKey || name),
+    deepLinkKey,
     appearancePercent: parsePercent(body.appearancePercent),
     isActive: !!body.isActive,
     code: body.code && typeof body.code === 'object' ? body.code : {},

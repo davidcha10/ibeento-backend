@@ -47,6 +47,31 @@ function toAnalyticsKey(value = '') {
 exports.resolve = async (req, res) => {
   try {
     const actorKey = String(req.query.actorKey || req.body?.actorKey || '').trim();
+    const deepLinkKey = String(req.query.deepLinkKey || req.query.paywallDeepLinkKey || req.body?.deepLinkKey || '')
+      .trim()
+      .toLowerCase();
+
+    if (deepLinkKey) {
+      const forcedVariant = await PaywallVariant.findOne({
+        isActive: true,
+        deepLinkKey,
+      }).lean();
+
+      if (forcedVariant) {
+        return res.json({
+          success: true,
+          data: {
+            _id: forcedVariant._id,
+            name: forcedVariant.name,
+            analyticsKey: forcedVariant.analyticsKey || toAnalyticsKey(forcedVariant.name),
+            deepLinkKey: forcedVariant.deepLinkKey || '',
+            appearancePercent: forcedVariant.appearancePercent,
+            isActive: forcedVariant.isActive,
+            code: forcedVariant.code || {},
+          },
+        });
+      }
+    }
 
     const active = await PaywallVariant.find({ isActive: true })
       .sort({ appearancePercent: -1, updatedAt: -1 })
@@ -67,6 +92,7 @@ exports.resolve = async (req, res) => {
         _id: variant._id,
         name: variant.name,
         analyticsKey: variant.analyticsKey || toAnalyticsKey(variant.name),
+        deepLinkKey: variant.deepLinkKey || '',
         appearancePercent: variant.appearancePercent,
         isActive: variant.isActive,
         code: variant.code || {},
