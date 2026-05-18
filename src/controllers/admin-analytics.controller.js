@@ -1060,7 +1060,14 @@ exports.usersTimelineStats = async (req, res, next) => {
       groupId = { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'UTC' } };
     }
 
-    const [newTotalRows, newProRows, baseTotal, basePro] = await Promise.all([
+    // Trial groupId uses createdAt on UserSubscription (same bucket logic)
+    const trialGroupId = granularity === 'day'
+      ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } }
+      : granularity === 'week'
+        ? { year: { $isoWeekYear: '$createdAt' }, week: { $isoWeek: '$createdAt' } }
+        : { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'UTC' } };
+
+    const [newTotalRows, newProRows, newTrialRows, baseTotal, basePro, baseTrial] = await Promise.all([
       // new total users per bucket in window
       User.aggregate([
         { $match: { createdAt: { $gte: windowStart } } },
@@ -1073,10 +1080,18 @@ exports.usersTimelineStats = async (req, res, next) => {
         { $group: { _id: groupId, count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
+      // new trialing subscriptions per bucket in window
+      UserSubscription.aggregate([
+        { $match: { createdAt: { $gte: windowStart }, status: 'trialing' } },
+        { $group: { _id: trialGroupId, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
       // users created before window start (base cumulative count)
       User.countDocuments({ createdAt: { $lt: windowStart } }),
       // PRO users created before window start
       User.countDocuments({ createdAt: { $lt: windowStart }, isPro: true }),
+      // trialing subscriptions created before window start
+      UserSubscription.countDocuments({ createdAt: { $lt: windowStart }, status: 'trialing' }),
     ]);
 
     // ── Build label → count maps ────────────────────────────────────
@@ -1087,24 +1102,29 @@ exports.usersTimelineStats = async (req, res, next) => {
 
     const totalMap = new Map(newTotalRows.map((r) => [rowKey(r), r.count]));
     const proMap   = new Map(newProRows.map((r)   => [rowKey(r), r.count]));
+    const trialMap = new Map(newTrialRows.map((r)  => [rowKey(r), r.count]));
 
     // ── Walk buckets and build series ──────────────────────────────
     const labels = [];
     const totalSeries = [];
     const proSeries   = [];
+    const trialSeries = [];
 
     let cumTotal = baseTotal;
     let cumPro   = basePro;
+    let cumTrial = baseTrial;
 
     if (granularity === 'day') {
       for (let cur = new Date(windowStart); cur <= todayUtc; cur = new Date(cur.getTime() + 86_400_000)) {
         const key = cur.toISOString().slice(0, 10);
-        cumTotal += Number(totalMap.get(key) || 0);
-        cumPro   += Number(proMap.get(key)   || 0);
+        cumTotal += Number(totalMap.get(key)  || 0);
+        cumPro   += Number(proMap.get(key)    || 0);
+        cumTrial += Number(trialMap.get(key)  || 0);
         const label = cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
         labels.push(label);
         totalSeries.push(cumTotal);
         proSeries.push(cumPro);
+        trialSeries.push(cumTrial);
       }
     } else if (granularity === 'week') {
       const isoWeekKey = (d) => {
@@ -1123,13 +1143,15 @@ exports.usersTimelineStats = async (req, res, next) => {
       weekSet.add(isoWeekKey(todayUtc));
 
       for (const wk of [...weekSet].sort()) {
-        cumTotal += Number(totalMap.get(wk) || 0);
-        cumPro   += Number(proMap.get(wk)   || 0);
+        cumTotal += Number(totalMap.get(wk)  || 0);
+        cumPro   += Number(proMap.get(wk)    || 0);
+        cumTrial += Number(trialMap.get(wk)  || 0);
         const [yr, wnum] = wk.split('-W');
         const label = `W${wnum} '${yr.slice(2)}`;
         labels.push(label);
         totalSeries.push(cumTotal);
         proSeries.push(cumPro);
+        trialSeries.push(cumTrial);
       }
     } else {
       // Monthly
@@ -1137,12 +1159,14 @@ exports.usersTimelineStats = async (req, res, next) => {
       const endMonth = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), 1));
       while (cur <= endMonth) {
         const key = cur.toISOString().slice(0, 7); // YYYY-MM
-        cumTotal += Number(totalMap.get(key) || 0);
-        cumPro   += Number(proMap.get(key)   || 0);
+        cumTotal += Number(totalMap.get(key)  || 0);
+        cumPro   += Number(proMap.get(key)    || 0);
+        cumTrial += Number(trialMap.get(key)  || 0);
         const label = cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
         labels.push(label);
         totalSeries.push(cumTotal);
         proSeries.push(cumPro);
+        trialSeries.push(cumTrial);
         cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1));
       }
     }
@@ -1152,6 +1176,7 @@ exports.usersTimelineStats = async (req, res, next) => {
       labels,
       total: totalSeries,
       pro:   proSeries,
+      trial: trialSeries,
       period,
       granularity,
     });
