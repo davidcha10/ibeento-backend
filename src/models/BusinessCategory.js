@@ -21,6 +21,14 @@ const BusinessCategorySchema = new Schema(
 
     // When true, providers can add multiple services from Wizard Step 5.
     multiservice: { type: Boolean, default: true },
+
+    // Defines whether services under this category are delivered at a fixed place.
+    serviceDeliveryMode: {
+      type: String,
+      enum: ['fixed_place', 'not_fixed_place', 'hybrid'],
+      default: 'hybrid',
+      index: true,
+    },
     
     isActive: { type: Boolean, default: true }
   },

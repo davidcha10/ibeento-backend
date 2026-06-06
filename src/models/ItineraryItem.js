@@ -34,9 +34,45 @@ const itineraryItemSchema = new Schema(
     activityId: { type: Schema.Types.ObjectId, ref: 'Activity' },
 
     customData: {
+      kind: { type: String, enum: ['custom', 'flight'], default: 'custom' },
       activityCategoryId:   { type: Schema.Types.ObjectId, ref: 'ActivityCategory' },
       title: { type: String, trim: true },
       description:   { type: String, trim: true },
+      flight: {
+        flightNumber: { type: String, trim: true },
+        manualEntry: { type: Boolean, default: false },
+        provider: { type: String, trim: true },
+        airlineName: { type: String, trim: true },
+        airlineIata: { type: String, trim: true },
+        airlineIcao: { type: String, trim: true },
+        status: { type: String, trim: true },
+        aircraftModel: { type: String, trim: true },
+        durationMinutes: { type: Number, min: 0 },
+        departure: {
+          iata: { type: String, trim: true },
+          icao: { type: String, trim: true },
+          timeZone: { type: String, trim: true },
+          terminal: { type: String, trim: true },
+          gate: { type: String, trim: true },
+          scheduledLocal: { type: String, trim: true },
+          estimatedLocal: { type: String, trim: true },
+          scheduledUtc: { type: String, trim: true },
+          estimatedUtc: { type: String, trim: true },
+        },
+        arrival: {
+          iata: { type: String, trim: true },
+          icao: { type: String, trim: true },
+          timeZone: { type: String, trim: true },
+          terminal: { type: String, trim: true },
+          gate: { type: String, trim: true },
+          baggage: { type: String, trim: true },
+          scheduledLocal: { type: String, trim: true },
+          estimatedLocal: { type: String, trim: true },
+          scheduledUtc: { type: String, trim: true },
+          estimatedUtc: { type: String, trim: true },
+        },
+        lastLookupAt: { type: String, trim: true },
+      },
     },
 
     status: { type: String, enum: ITEM_STATUS, default: 'draft' },
@@ -194,6 +230,34 @@ const itineraryItemSchema = new Schema(
       paidAt: { type: Date },
       refundedAt: { type: Date },
       raw: { type: Schema.Types.Mixed }
+    },
+
+    pricingSelection: {
+      mode: { type: String, enum: ['rule', 'grouped', 'travelers', 'manual'] },
+      ruleId: { type: String, trim: true },
+      label: { type: String, trim: true },
+      amount: { type: Number },
+      currency: { type: String, trim: true },
+      groups: [
+        {
+          guestType: { type: String, enum: ['adults', 'children', 'babies', 'all'] },
+          count: { type: Number, min: 0 },
+          ruleId: { type: String, trim: true },
+          label: { type: String, trim: true },
+          ageLabel: { type: String, trim: true },
+        }
+      ],
+      travelers: [
+        {
+          travelerId: { type: String, trim: true },
+          travelerLabel: { type: String, trim: true },
+          travelerAge: { type: Number, min: 0 },
+          guestType: { type: String, enum: ['adults', 'children', 'babies', 'all'] },
+          ruleId: { type: String, trim: true },
+          label: { type: String, trim: true },
+          ageLabel: { type: String, trim: true },
+        }
+      ],
     },
 
     // Resolved geo context for routing/maps at itinerary-item level.

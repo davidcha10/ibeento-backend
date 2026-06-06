@@ -13,6 +13,7 @@ const { startSireDailyReportScheduler } = require('./services/sire-daily-report.
 const { startOrphanActivityCleanupScheduler } = require('./services/activity-orphan-cleanup.service');
 const { startTrialReminderScheduler } = require('./services/trial-reminder.service');
 const { startDiscoverPreviewPersistentWorker } = require('./controllers/activity.controller');
+const { startExchangeRateSyncScheduler } = require('./services/exchange-rate-sync.service');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -83,6 +84,7 @@ const PORT = process.env.PORT || 4000;
   startSireDailyReportScheduler();
   startOrphanActivityCleanupScheduler();
   startTrialReminderScheduler();
+  startExchangeRateSyncScheduler();
   startDiscoverPreviewPersistentWorker();
   app.listen(PORT, () => console.log(`🚀 API listening at http://localhost:${PORT}`));
 })();

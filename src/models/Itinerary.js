@@ -59,6 +59,13 @@ const itinerarySchema = new Schema(
       babies:   { type: Number, min: 0, default: 0 },
       total:    { type: Number, min: 0, default: 0 }
     },
+    travelers: [
+      {
+        id: { type: String, trim: true },
+        name: { type: String, trim: true, maxlength: 80 },
+        age: { type: Number, min: 0, max: 120 },
+      }
+    ],
     sharedWith: [
       {
         userId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -84,13 +91,54 @@ function normalizeGuests(obj) {
   obj.total = a + c + b;
 }
 
+function normalizeTravelers(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((entry, index) => {
+      const age = Number(entry?.age);
+      const name = String(entry?.name || '').trim();
+      return {
+        id: String(entry?.id || `traveler_${index + 1}`).trim(),
+        ...(name ? { name: name.slice(0, 80) } : {}),
+        age: Number.isFinite(age) ? Math.max(0, Math.min(120, Math.round(age))) : 30,
+      };
+    })
+    .filter((entry) => !!entry.id);
+}
+
+function deriveGuestsFromTravelers(list) {
+  const travelers = normalizeTravelers(list);
+  let adults = 0;
+  let children = 0;
+  let babies = 0;
+  for (const traveler of travelers) {
+    const age = Number(traveler.age);
+    if (!Number.isFinite(age)) continue;
+    if (age <= 2) babies += 1;
+    else if (age <= 12) children += 1;
+    else adults += 1;
+  }
+  return { adults, children, babies, total: travelers.length };
+}
+
 itinerarySchema.pre('save', function(next) {
+  if (Array.isArray(this.travelers) && this.travelers.length) {
+    this.travelers = normalizeTravelers(this.travelers);
+    this.guests = deriveGuestsFromTravelers(this.travelers);
+  }
   if (this.guests) normalizeGuests(this.guests);
   next();
 });
 
 itinerarySchema.pre('findOneAndUpdate', function(next) {
   const update = this.getUpdate() || {};
+  if (update.$set && Array.isArray(update.$set.travelers)) {
+    update.$set.travelers = normalizeTravelers(update.$set.travelers);
+    update.$set.guests = deriveGuestsFromTravelers(update.$set.travelers);
+  } else if (Array.isArray(update.travelers)) {
+    update.travelers = normalizeTravelers(update.travelers);
+    update.guests = deriveGuestsFromTravelers(update.travelers);
+  }
   if (update.$set && update.$set.guests) {
     normalizeGuests(update.$set.guests);
   } else if (update.guests) {

@@ -31,6 +31,8 @@ const adminRoutes = require('./admin.routes');
 const adminBillingRoutes = require('./admin-billing.routes');
 const billingRoutes = require('./billing.routes');
 const paywallVariantsRoutes = require('./paywall-variants.routes');
+const exchangeRatesRoutes = require('./exchange-rates.routes');
+const flightsRoutes = require('./flights.routes');
 
 const router = Router();
 
@@ -64,6 +66,8 @@ router.use('/emails', emailRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/billing', billingRoutes);
 router.use('/paywall-variants', paywallVariantsRoutes);
+router.use('/exchange-rates', exchangeRatesRoutes);
+router.use('/flights', flightsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/admin/billing', adminBillingRoutes);
 

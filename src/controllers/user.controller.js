@@ -18,6 +18,17 @@ function getAuthenticatedUserId(req) {
   return req.user?._id || req.user?.id || null;
 }
 
+function normalizeCurrencyCode(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (!normalized) return undefined;
+  if (!/^[A-Z]{3}$/.test(normalized)) {
+    const error = new Error('preferredCurrency must be a valid 3-letter currency code');
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalized;
+}
+
 // Get current authenticated user
 exports.me = async (req, res) => {
   try {
@@ -68,7 +79,7 @@ exports.updatePreferences = async (req, res) => {
 // Update profile (name, avatar, nationality, etc.)
 exports.updateProfile = async (req, res) => {
   try {
-    const allowedFields = ['name', 'nationality', 'profile'];
+    const allowedFields = ['name', 'nationality', 'preferredCurrency', 'profile'];
     const updates = {};
     const userId = getAuthenticatedUserId(req);
     if (!userId) {
@@ -78,6 +89,10 @@ exports.updateProfile = async (req, res) => {
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     });
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'preferredCurrency')) {
+      updates.preferredCurrency = normalizeCurrencyCode(updates.preferredCurrency);
+    }
 
     const user = await User.findByIdAndUpdate(
       userId,

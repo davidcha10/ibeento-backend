@@ -150,6 +150,7 @@ function mapSharedTimelineItem(item) {
     category,
     notes: String(item?.notes || '').trim(),
     guestsTotal: Number(item?.guests?.total || 0),
+    pricingSelection: item?.pricingSelection || null,
   };
 }
 
@@ -738,7 +739,7 @@ exports.viewShareLink = async (req, res, next) => {
     if (!itineraryId) return res.status(400).json({ error: 'Invalid itinerary id in link' });
 
     const itinerary = await Itinerary.findById(itineraryId)
-      .select('_id name tripStartDate tripEndDate status visitPlaces destinations guests')
+      .select('_id name tripStartDate tripEndDate status visitPlaces destinations guests travelers')
       .lean();
     if (!itinerary) return res.status(404).json({ error: 'Itinerary not found' });
 
@@ -758,6 +759,7 @@ exports.viewShareLink = async (req, res, next) => {
         tripStartDate: itinerary.tripStartDate || null,
         tripEndDate: itinerary.tripEndDate || null,
         guests: itinerary.guests || null,
+        travelers: itinerary.travelers || null,
         visitPlacesCount: Array.isArray(itinerary.visitPlaces) ? itinerary.visitPlaces.length : 0,
       },
       items: mappedItems,
@@ -774,7 +776,7 @@ exports.viewSharedItinerary = async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
     const itinerary = await Itinerary.findById(itineraryId)
-      .select('_id userId name tripStartDate tripEndDate sharedWith guests visitPlaces')
+      .select('_id userId name tripStartDate tripEndDate sharedWith guests travelers visitPlaces')
       .lean();
     if (!itinerary) return res.status(404).json({ error: 'Itinerary not found' });
     if (!canReadItinerary(itinerary, req.user)) {
@@ -797,6 +799,7 @@ exports.viewSharedItinerary = async (req, res, next) => {
         tripStartDate: itinerary.tripStartDate || null,
         tripEndDate: itinerary.tripEndDate || null,
         guests: itinerary.guests || null,
+        travelers: itinerary.travelers || null,
         visitPlacesCount: Array.isArray(itinerary.visitPlaces) ? itinerary.visitPlaces.length : 0,
       },
       items: mappedItems,

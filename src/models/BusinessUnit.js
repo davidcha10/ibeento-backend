@@ -84,6 +84,12 @@ const BusinessUnitSchema = new Schema(
       placeName: { type: String, trim: true, default: null },
       placeDescription: { type: String, trim: true, default: null },
     },
+    serviceCoverageMode: {
+      type: String,
+      enum: ['fixed_place', 'zone_based', 'no_fixed_place'],
+      default: 'fixed_place',
+      index: true,
+    },
     description: { type: String, trim: true },
     logo: { type: String, trim: true },
 
@@ -91,6 +97,7 @@ const BusinessUnitSchema = new Schema(
       address: { type: String, trim: true },
       timeZone: { type: String, trim: true, default: null },
       primaryZoneId: { type: Schema.Types.ObjectId, ref: 'Zone', index: true },
+      coverageZoneIds: [{ type: Schema.Types.ObjectId, ref: 'Zone' }],
       geo: {
         type: { type: String, enum: ['Point'], default: 'Point' },
         coordinates: { type: [Number], index: '2dsphere' },

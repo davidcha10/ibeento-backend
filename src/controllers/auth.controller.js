@@ -176,6 +176,20 @@ function deriveTravelCompanionFromQuestionSteps(questionSteps) {
   return null;
 }
 
+function buildAuthUserPayload(user) {
+  return {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isPro: !!user.isPro,
+    preferredCurrency: String(user?.preferredCurrency || 'USD').trim().toUpperCase() || 'USD',
+    photo: user.photo,
+    providers: user.providers,
+    onboardingCompleted: user.onboardingCompleted,
+  };
+}
+
 /**
  * Deriva los campos de UserPreference a partir de los datos del onboarding.
  */
@@ -302,14 +316,7 @@ exports.register = async (req, res, next) => {
     const accessToken = signAccessToken(user);
     res.status(201).json({
       accessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        isPro: !!user.isPro,
-        onboardingCompleted: user.onboardingCompleted,
-      }
+      user: buildAuthUserPayload(user),
     });
   } catch (err) { next(err); }
 };
@@ -339,14 +346,7 @@ exports.login = async (req, res, next) => {
     const accessToken = signAccessToken(user);
     res.json({
       accessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        isPro: !!user.isPro,
-        onboardingCompleted: user.onboardingCompleted,
-      }
+      user: buildAuthUserPayload(user),
     });
   } catch (err) { next(err); }
 };
@@ -480,16 +480,7 @@ exports.google = async (req, res, next) => {
     const accessToken = signAccessToken(user);
     res.json({
       accessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        isPro: !!user.isPro,
-        photo: user.photo,
-        providers: user.providers,
-        onboardingCompleted: user.onboardingCompleted,
-      }
+      user: buildAuthUserPayload(user),
     });
   } catch (err) {
     next(err);
@@ -576,16 +567,7 @@ exports.apple = async (req, res, next) => {
     console.log('[auth.apple] success', { userId: String(user._id), email: user.email, isPro: !!user.isPro });
     res.json({
       accessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        isPro: !!user.isPro,
-        photo: user.photo,
-        providers: user.providers,
-        onboardingCompleted: user.onboardingCompleted,
-      }
+      user: buildAuthUserPayload(user),
     });
   } catch (err) {
     console.error('[auth.apple] error', err?.message || err);

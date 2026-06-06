@@ -23,6 +23,7 @@ const userSchema = new Schema(
     },
     
     nationality: { type: String, trim: true },
+    preferredCurrency: { type: String, trim: true, uppercase: true, default: 'USD' },
 
     role: { type: String, enum: USER_ROLES, default: 'user', index: true }, // índice normal para filtrar rápido por rol
     isPro: { type: Boolean, default: false, index: true },
