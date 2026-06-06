@@ -199,9 +199,41 @@ const activitySchema = new Schema({
         priceTo: { type: Number },
         note: { type: String, trim: true },
         purchaseUrl: { type: String, trim: true },
+        accessTypes: [{
+          id: { type: String, trim: true },
+          name: { type: String, trim: true },
+          rules: [{
+            id: { type: String, trim: true },
+            label: { type: String, trim: true },
+            accessTypeId: { type: String, trim: true },
+            accessTypeName: { type: String, trim: true },
+            priceFrom: { type: Number },
+            priceTo: { type: Number },
+            unit: {
+              type: String,
+              enum: ['person', 'group', 'entry', 'night', 'other'],
+            },
+            conditions: {
+              ageMin: { type: Number },
+              ageMax: { type: Number },
+              nationalityMode: { type: String, enum: ['all', 'include', 'exclude'], default: 'all' },
+              nationalityCountryCodes: [{ type: String, trim: true, uppercase: true }],
+              residencyMode: { type: String, enum: ['all', 'include', 'exclude'], default: 'all' },
+              residencyCountryCodes: [{ type: String, trim: true, uppercase: true }],
+              season: { type: String, enum: ['all', 'low', 'high', 'regular'], default: 'all' },
+              dateRanges: [{
+                start: { type: String, trim: true },
+                end: { type: String, trim: true },
+              }],
+            },
+            active: { type: Boolean, default: true },
+          }],
+        }],
         rules: [{
           id: { type: String, trim: true },
           label: { type: String, trim: true },
+          accessTypeId: { type: String, trim: true },
+          accessTypeName: { type: String, trim: true },
           priceFrom: { type: Number },
           priceTo: { type: Number },
           unit: {
