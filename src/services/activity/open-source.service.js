@@ -877,10 +877,12 @@ async function wikidataGetEntitiesRaw(ids = [], options = {}) {
   if (!clean.length) return {};
   const out = {};
   const chunkSize = 40;
+  const strict = !!options?.strict;
   const requestedLanguages = Array.isArray(options?.languages)
     ? options.languages.map((value) => String(value || '').trim()).filter(Boolean).join('|')
     : String(options?.languages || '').trim();
   const languages = requestedLanguages || 'en';
+  let lastError = null;
 
   for (let i = 0; i < clean.length; i += chunkSize) {
     const chunk = clean.slice(i, i + chunkSize);
@@ -892,11 +894,26 @@ async function wikidataGetEntitiesRaw(ids = [], options = {}) {
     url.searchParams.set('props', 'labels|descriptions|claims|sitelinks');
     url.searchParams.set('ids', chunk.join('|'));
 
-    const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
-    if (!res.ok) continue;
-    const json = await res.json();
-    const entities = json?.entities || {};
-    Object.assign(out, entities);
+    try {
+      const res = await fetchWithRetry(url.toString(), { headers: buildHeaders() });
+      if (!res.ok) {
+        const err = new Error(`Wikidata responded with status ${res.status}`);
+        err.status = res.status;
+        lastError = err;
+        if (strict) throw err;
+        continue;
+      }
+      const json = await res.json();
+      const entities = json?.entities || {};
+      Object.assign(out, entities);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err || 'Unknown Wikidata error'));
+      if (strict) throw lastError;
+    }
+  }
+
+  if (strict && !Object.keys(out).length && lastError) {
+    throw lastError;
   }
 
   return out;

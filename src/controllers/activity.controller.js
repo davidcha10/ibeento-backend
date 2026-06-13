@@ -3404,9 +3404,20 @@ function wikidataEntityStringClaim(entity = {}, property = '') {
 }
 
 async function buildActivityDraftFromWikidataQid(qid) {
-  const entityMap = await wikidataGetEntitiesRaw([qid], {
-    languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar'],
-  });
+  let entityMap;
+  try {
+    entityMap = await wikidataGetEntitiesRaw([qid], {
+      languages: ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar'],
+      strict: true,
+    });
+  } catch (err) {
+    const status = Number(err?.status);
+    const isRateLimited = status === 429;
+    const message = isRateLimited
+      ? `Wikidata rate limited the request for ${qid}. Please try again in a moment.`
+      : `Wikidata lookup failed for ${qid}. ${String(err?.message || 'Unknown error')}`.trim();
+    return { errorStatus: 502, errorMessage: message };
+  }
   const entity = entityMap?.[qid];
   if (!entity || entity.missing) {
     return { errorStatus: 404, errorMessage: `No Wikidata entity found for ${qid}` };

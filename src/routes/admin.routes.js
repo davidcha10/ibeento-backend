@@ -10,6 +10,7 @@ const adminCompliancePacksController = require('../controllers/admin-compliance-
 const adminSocialImportLinksController = require('../controllers/admin-social-import-links.controller');
 const adminPaywallVariantsController = require('../controllers/admin-paywall-variants.controller');
 const adminEmailTemplatesController = require('../controllers/admin-email-templates.controller');
+const adminActivityImageSearchController = require('../controllers/admin-activity-image-search.controller');
 const onboardingTrackingController = require('../controllers/onboarding-tracking.controller');
 
 const router = Router();
@@ -56,6 +57,7 @@ router.get('/paywall-variants', adminPaywallVariantsController.list);
 router.post('/paywall-variants', adminPaywallVariantsController.create);
 router.put('/paywall-variants/:id', adminPaywallVariantsController.updateById);
 router.delete('/paywall-variants/:id', adminPaywallVariantsController.removeById);
+router.get('/activity-images/search', adminActivityImageSearchController.search);
 router.get('/email-templates', adminEmailTemplatesController.list);
 router.post('/email-templates', adminEmailTemplatesController.create);
 router.put('/email-templates/:id', adminEmailTemplatesController.updateById);

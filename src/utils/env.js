@@ -54,7 +54,7 @@ const CONFIG = {
   JWT_REFRESH_SECRET: requireEnv('JWT_REFRESH_SECRET', {
     message: 'JWT_REFRESH_SECRET is missing (check .env)'
   }),
-  ACCESS_TOKEN_TTL_SEC: intEnv('ACCESS_TOKEN_TTL_SEC', 7200, { min: 60 }),
+  ACCESS_TOKEN_TTL_SEC: intEnv('ACCESS_TOKEN_TTL_SEC', 86400, { min: 60 }),
   REFRESH_TOKEN_TTL_DAYS: intEnv('REFRESH_TOKEN_TTL_DAYS', 30, { min: 1 })
 };
 
